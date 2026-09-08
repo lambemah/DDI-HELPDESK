@@ -1,55 +1,120 @@
 const express = require("express");
 
 const app = express();
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+/* =========================
+   DONNÉES DE DÉMONSTRATION
+========================= */
 
 let requests = [
   {
     id: "DDI-0025",
     name: "Mamadou",
     service: "Comptabilité",
+    subject: "Ordinateur",
     message: "Mon ordinateur ne démarre plus depuis ce matin.",
     status: "En cours",
     time: "10:25",
+    messages: [
+      {
+        sender: "Mamadou",
+        role: "Employé",
+        text: "Mon ordinateur ne démarre plus depuis ce matin.",
+        time: "10:25",
+        type: "employee"
+      },
+      {
+        sender: "Service Informatique",
+        role: "IT",
+        text: "Votre demande est prise en charge. Nous allons vérifier votre ordinateur.",
+        time: "10:30",
+        type: "it"
+      }
+    ]
   },
   {
     id: "DDI-0024",
     name: "Fanta",
     service: "Ressources Humaines",
+    subject: "Imprimante",
     message: "L'imprimante ne fonctionne plus.",
     status: "Nouveau",
     time: "09:40",
+    messages: [
+      {
+        sender: "Fanta",
+        role: "Employée",
+        text: "L'imprimante ne fonctionne plus.",
+        time: "09:40",
+        type: "employee"
+      }
+    ]
   },
   {
     id: "DDI-0023",
     name: "Aïssata",
     service: "Direction",
+    subject: "Internet",
     message: "Je n'arrive plus à me connecter à Internet.",
     status: "Terminé",
     time: "09:15",
+    messages: [
+      {
+        sender: "Aïssata",
+        role: "Direction",
+        text: "Je n'arrive plus à me connecter à Internet.",
+        time: "09:15",
+        type: "employee"
+      },
+      {
+        sender: "Service Informatique",
+        role: "IT",
+        text: "Le problème de connexion est résolu.",
+        time: "09:50",
+        type: "it"
+      }
+    ]
   },
   {
     id: "DDI-0022",
     name: "Paul",
     service: "Commercial",
-    message: "Ma messagerie professionnelle ne fonctionne pas.",
+    subject: "Email",
+    message: "Je n'arrive plus à accéder à ma boîte mail.",
     status: "Non traité",
     time: "08:50",
-  },
+    messages: [
+      {
+        sender: "Paul",
+        role: "Commercial",
+        text: "Je n'arrive plus à accéder à ma boîte mail.",
+        time: "08:50",
+        type: "employee"
+      }
+    ]
+  }
 ];
 
 let nextId = 26;
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+/* =========================
+   OUTILS
+========================= */
+
+function escapeHtml(text) {
+  if (!text) return "";
+
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function statusClass(status) {
@@ -59,185 +124,148 @@ function statusClass(status) {
   return "untreated";
 }
 
-function renderApp() {
-  const total = requests.length;
-  const nouveau = requests.filter((r) => r.status === "Nouveau").length;
-  const encours = requests.filter((r) => r.status === "En cours").length;
-  const termine = requests.filter((r) => r.status === "Terminé").length;
-  const nontraite = requests.filter((r) => r.status === "Non traité").length;
+function statusIcon(status) {
+  if (status === "Nouveau") return "🆕";
+  if (status === "En cours") return "🔵";
+  if (status === "Terminé") return "🟢";
+  return "🔴";
+}
 
-  const list = requests
-    .map(
-      (r) => `
-        <a class="request" href="/?id=${encodeURIComponent(r.id)}">
-          <div class="request-top">
-            <div class="avatar">${escapeHtml(r.name.charAt(0).toUpperCase())}</div>
-            <div class="request-user">
-              <strong>${escapeHtml(r.name)}</strong>
-              <small>${escapeHtml(r.service)}</small>
-            </div>
-            <time>${escapeHtml(r.time)}</time>
-          </div>
+function getCounts() {
+  return {
+    nouveau: requests.filter(r => r.status === "Nouveau").length,
+    progress: requests.filter(r => r.status === "En cours").length,
+    done: requests.filter(r => r.status === "Terminé").length,
+    untreated: requests.filter(r => r.status === "Non traité").length
+  };
+}
 
-          <p>${escapeHtml(r.message)}</p>
+/* =========================
+   PAGE PRINCIPALE
+========================= */
 
-          <span class="badge ${statusClass(r.status)}">
-            ${escapeHtml(r.status)}
-          </span>
-        </a>
-      `
-    )
-    .join("");
+function renderApp(selectedId, view = "all") {
+  const counts = getCounts();
 
-  const selectedId = requests.length
-    ? new URLSearchParams(global.currentUrl || "").get("id") || requests[0].id
-    : null;
+  let filteredRequests = [...requests];
+
+  if (view === "new") {
+    filteredRequests = requests.filter(r => r.status === "Nouveau");
+  }
+
+  if (view === "progress") {
+    filteredRequests = requests.filter(r => r.status === "En cours");
+  }
+
+  if (view === "done") {
+    filteredRequests = requests.filter(r => r.status === "Terminé");
+  }
+
+  if (view === "untreated") {
+    filteredRequests = requests.filter(r => r.status === "Non traité");
+  }
 
   const selected =
-    requests.find((r) => r.id === selectedId) || requests[0];
+    requests.find(r => r.id === selectedId) ||
+    filteredRequests[0] ||
+    requests[0];
 
-  let conversation = "";
+  const activeId = selected ? selected.id : "";
 
-  if (selected) {
-    conversation = `
-      <div class="conversation-header">
-        <div class="avatar big">
-          ${escapeHtml(selected.name.charAt(0).toUpperCase())}
-        </div>
+  const requestList = filteredRequests.length
+    ? filteredRequests
+        .map(
+          r => `
+          <a class="request-item ${r.id === activeId ? "active" : ""}"
+             href="/?id=${encodeURIComponent(r.id)}&view=${encodeURIComponent(view)}">
 
-        <div>
-          <h2>${escapeHtml(selected.name)}</h2>
-          <small>Demande #${escapeHtml(selected.id)}</small>
-        </div>
+            <div class="avatar">${escapeHtml(r.name.charAt(0).toUpperCase())}</div>
 
-        <span class="badge ${statusClass(selected.status)} header-status">
-          ${escapeHtml(selected.status)}
-        </span>
-      </div>
+            <div class="request-content">
+              <div class="request-top">
+                <strong>${escapeHtml(r.name)}</strong>
+                <span>${escapeHtml(r.time)}</span>
+              </div>
 
-      <div class="messages">
+              <div class="service">${escapeHtml(r.service)}</div>
 
-        <div class="day">Aujourd'hui</div>
+              <div class="subject">
+                ${escapeHtml(r.message)}
+              </div>
 
-        <div class="message received">
-          <p>${escapeHtml(selected.message)}</p>
-          <span>${escapeHtml(selected.time)}</span>
-        </div>
-
-        <div class="message system-message">
-          <strong>Suivi de la demande</strong>
-          <p>
-            Cette demande est actuellement suivie par le service informatique.
-          </p>
-        </div>
-
-        <div class="intervention">
-          <div>
-            <small>INTERVENTION INFORMATIQUE</small>
-            <h3>Changer le statut</h3>
-          </div>
-
-          <div class="status-buttons">
-            <form method="POST" action="/status">
-              <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
-              <input type="hidden" name="status" value="Nouveau">
-              <button class="${
-                selected.status === "Nouveau" ? "active new" : ""
-              }">Nouveau</button>
-            </form>
-
-            <form method="POST" action="/status">
-              <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
-              <input type="hidden" name="status" value="En cours">
-              <button class="${
-                selected.status === "En cours" ? "active progress" : ""
-              }">En cours</button>
-            </form>
-
-            <form method="POST" action="/status">
-              <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
-              <input type="hidden" name="status" value="Terminé">
-              <button class="${
-                selected.status === "Terminé" ? "active done" : ""
-              }">Terminé</button>
-            </form>
-
-            <form method="POST" action="/status">
-              <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
-              <input type="hidden" name="status" value="Non traité">
-              <button class="${
-                selected.status === "Non traité" ? "active untreated" : ""
-              }">Non traité</button>
-            </form>
-          </div>
-        </div>
-
-        <form class="reply" method="POST" action="/message">
-          <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
-          <input
-            type="text"
-            name="message"
-            placeholder="Écrire une intervention..."
-            required
-          >
-          <button type="submit">➤</button>
-        </form>
-
+              <span class="status ${statusClass(r.status)}">
+                ${statusIcon(r.status)} ${escapeHtml(r.status)}
+              </span>
+            </div>
+          </a>
+        `
+        )
+        .join("")
+    : `
+      <div class="empty-list">
+        <div class="empty-icon">📭</div>
+        <strong>Aucune demande</strong>
+        <p>Il n'y a aucune demande dans cette catégorie.</p>
       </div>
     `;
 
-    const history = `
-      <div class="detail-card">
-        <small>DEMANDEUR</small>
-        <strong>${escapeHtml(selected.name)}</strong>
+  const conversation = selected
+    ? selected.messages
+        .map(
+          m => `
+          <div class="message-row ${m.type === "it" ? "it-message" : ""}">
+            <div class="message ${m.type === "it" ? "message-it" : "message-employee"}">
 
-        <small>SERVICE</small>
-        <strong>${escapeHtml(selected.service)}</strong>
+              <div class="message-author">
+                ${escapeHtml(m.sender)}
+              </div>
 
-        <small>HEURE</small>
-        <strong>${escapeHtml(selected.time)}</strong>
+              <div class="message-role">
+                ${escapeHtml(m.role)}
+              </div>
 
-        <small>STATUT ACTUEL</small>
-        <span class="badge ${statusClass(selected.status)}">
-          ${escapeHtml(selected.status)}
-        </span>
+              <div class="message-text">
+                ${escapeHtml(m.text)}
+              </div>
 
-        <hr>
+              <div class="message-time">
+                ${escapeHtml(m.time)}
+              </div>
 
-        <small>HISTORIQUE</small>
-
-        <div class="timeline">
-          <div>
-            <b>Demande créée</b>
-            <span>${escapeHtml(selected.time)}</span>
+            </div>
           </div>
-
-          ${
-            selected.status !== "Nouveau"
-              ? `
-                <div>
-                  <b>Suivi informatique</b>
-                  <span>Service Informatique</span>
-                </div>
-              `
-              : ""
-          }
-        </div>
+        `
+        )
+        .join("")
+    : `
+      <div class="no-conversation">
+        Sélectionnez une demande.
       </div>
     `;
 
-    global.selectedHistory = history;
-  }
+  const pageTitle =
+    view === "new"
+      ? "Nouvelles demandes"
+      : view === "progress"
+      ? "Demandes en cours"
+      : view === "done"
+      ? "Demandes terminées"
+      : view === "untreated"
+      ? "Demandes non traitées"
+      : "Canal DDI";
 
   return `
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>DDI HELPDESK</title>
 
 <style>
+
 * {
   box-sizing: border-box;
 }
@@ -245,939 +273,1417 @@ function renderApp() {
 body {
   margin: 0;
   font-family: Arial, Helvetica, sans-serif;
-  background: #eef3f7;
+  background: #f5f8fb;
   color: #172b3a;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+a {
+  text-decoration: none;
+  color: inherit;
 }
 
-button {
-  cursor: pointer;
-}
+/* =========================
+   STRUCTURE
+========================= */
 
-.layout {
-  min-height: 100vh;
+.app {
   display: flex;
+  min-height: 100vh;
 }
+
+/* =========================
+   SIDEBAR
+========================= */
 
 .sidebar {
-  width: 250px;
-  background: #0f6ea8;
+  width: 285px;
+  background: #1478ad;
   color: white;
-  padding: 24px 15px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 10px 25px;
+.brand {
+  padding: 35px 28px 28px;
   border-bottom: 1px solid rgba(255,255,255,.15);
 }
 
-.logo-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+.brand-box {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.brand-logo {
+  width: 58px;
+  height: 58px;
+  border-radius: 15px;
   background: white;
-  color: #0f6ea8;
-  display: grid;
-  place-items: center;
+  color: #1478ad;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27px;
   font-weight: bold;
-  font-size: 20px;
 }
 
-.logo h1 {
+.brand h1 {
   margin: 0;
-  font-size: 17px;
+  font-size: 21px;
 }
 
-.logo small {
-  color: #d8efff;
-}
-
-nav {
-  margin-top: 20px;
-}
-
-nav a {
-  display: block;
-  color: white;
-  text-decoration: none;
-  padding: 13px 15px;
-  margin-bottom: 5px;
-  border-radius: 11px;
+.brand p {
+  margin: 5px 0 0;
   font-size: 14px;
+  opacity: .85;
 }
 
-nav a:hover,
-nav a.active {
-  background: rgba(255,255,255,.15);
+.menu {
+  padding: 25px 12px;
 }
 
-.logout {
-  margin-top: auto;
-  padding: 13px 15px;
+.menu a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin-bottom: 5px;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: .2s;
 }
+
+.menu a:hover {
+  background: rgba(255,255,255,.12);
+}
+
+.menu a.active {
+  background: rgba(255,255,255,.19);
+}
+
+.menu-icon {
+  width: 25px;
+  text-align: center;
+  font-size: 18px;
+}
+
+/* =========================
+   MAIN
+========================= */
 
 .main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
+
+/* =========================
+   TOPBAR
+========================= */
 
 .topbar {
-  height: 76px;
+  height: 105px;
   background: white;
-  border-bottom: 1px solid #e4eaf0;
+  border-bottom: 1px solid #e3ebf2;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  padding: 0 25px;
+  padding: 0 35px;
 }
 
-.topbar h2 {
-  margin: 0 0 4px;
-}
-
-.topbar p {
+.top-title h2 {
   margin: 0;
-  color: #71808d;
-  font-size: 13px;
+  font-size: 28px;
 }
 
-.profile {
+.top-title p {
+  margin: 5px 0 0;
+  color: #718096;
+}
+
+.user {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 13px;
 }
 
-.profile-avatar {
-  width: 42px;
-  height: 42px;
+.user-avatar {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: #e5f2fc;
-  color: #0f6ea8;
-  display: grid;
-  place-items: center;
+  background: #e5f3fc;
+  color: #1478ad;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: bold;
+  font-size: 18px;
 }
+
+.user strong {
+  display: block;
+}
+
+.user span {
+  color: #778899;
+  font-size: 14px;
+}
+
+/* =========================
+   CONTENT
+========================= */
+
+.content {
+  padding: 28px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* =========================
+   STAT CARDS
+========================= */
 
 .stats {
-  padding: 20px 25px;
-  background: white;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  border-bottom: 1px solid #e4eaf0;
+  gap: 18px;
+  margin-bottom: 25px;
 }
 
 .stat {
-  border: 1px solid #e7edf2;
-  border-radius: 16px;
-  padding: 15px;
   background: white;
-  box-shadow: 0 3px 12px rgba(30,70,100,.05);
+  border: 1px solid #e3ebf2;
+  border-radius: 17px;
+  padding: 18px 20px;
 }
 
 .stat-top {
   display: flex;
   justify-content: space-between;
-  font-size: 24px;
+  align-items: center;
 }
 
-.stat small {
-  color: #73808b;
+.stat-icon {
+  font-size: 23px;
 }
 
-.workspace {
-  display: grid;
-  grid-template-columns: 310px 1fr 280px;
-  min-height: calc(100vh - 176px);
+.stat-number {
+  font-size: 28px;
+  font-weight: bold;
 }
 
-.requests {
+.stat-label {
+  color: #718096;
+  margin-top: 5px;
+}
+
+/* =========================
+   HELP DESK
+========================= */
+
+.helpdesk {
   background: white;
-  border-right: 1px solid #e4eaf0;
-  overflow-y: auto;
+  border: 1px solid #e1e9f0;
+  border-radius: 18px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  min-height: 610px;
+}
+
+/* =========================
+   REQUEST LIST
+========================= */
+
+.requests-panel {
+  border-right: 1px solid #e1e9f0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .requests-header {
-  padding: 18px;
-  border-bottom: 1px solid #e4eaf0;
+  padding: 22px;
+  border-bottom: 1px solid #e8eef3;
 }
 
-.requests-header-row {
+.requests-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.requests-header h3 {
+.requests-title h3 {
   margin: 0;
+  font-size: 20px;
 }
 
-.count {
-  background: #e9f4fc;
-  color: #0f6ea8;
-  padding: 5px 10px;
+.counter {
+  background: #e7f3fb;
+  color: #1478ad;
+  padding: 6px 11px;
+  border-radius: 20px;
+  font-weight: bold;
+}
+
+.new-button {
+  display: block;
+  margin-top: 15px;
+  background: #1478ad;
+  color: white;
+  padding: 13px;
+  border-radius: 11px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.request-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.request-item {
+  display: flex;
+  gap: 13px;
+  padding: 17px;
+  border-bottom: 1px solid #edf1f4;
+}
+
+.request-item:hover {
+  background: #f7fbfe;
+}
+
+.request-item.active {
+  background: #edf7fd;
+  border-left: 4px solid #1478ad;
+  padding-left: 13px;
+}
+
+.avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: #edf2f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #1478ad;
+  flex-shrink: 0;
+}
+
+.request-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.request-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.request-top strong {
+  font-size: 15px;
+}
+
+.request-top span {
+  color: #91a0ad;
+  font-size: 12px;
+}
+
+.service {
+  color: #758696;
+  font-size: 13px;
+  margin: 3px 0 8px;
+}
+
+.subject {
+  color: #536575;
+  font-size: 14px;
+  line-height: 1.4;
+  margin-bottom: 9px;
+}
+
+.status {
+  display: inline-block;
+  padding: 5px 9px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: bold;
 }
 
-.new-request {
-  display: block;
-  text-align: center;
-  text-decoration: none;
-  background: #0f6ea8;
-  color: white;
-  padding: 12px;
-  border-radius: 11px;
-  margin-top: 14px;
-  font-weight: bold;
-  font-size: 13px;
+.status.new {
+  background: #fff6d9;
+  color: #a97800;
 }
 
-.request {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  padding: 16px;
-  border-bottom: 1px solid #edf1f4;
+.status.progress {
+  background: #e6f4ff;
+  color: #1478ad;
 }
 
-.request:hover {
-  background: #f4f9fc;
+.status.done {
+  background: #e7faef;
+  color: #1b8a50;
 }
 
-.request-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.status.untreated {
+  background: #ffe8eb;
+  color: #c6384d;
 }
 
-.avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #edf1f5;
-  display: grid;
-  place-items: center;
-  font-weight: bold;
-  color: #526575;
-  flex-shrink: 0;
-}
+/* =========================
+   CONVERSATION
+========================= */
 
-.avatar.big {
-  width: 46px;
-  height: 46px;
-  background: #e5f2fc;
-  color: #0f6ea8;
-}
-
-.request-user {
-  flex: 1;
-  min-width: 0;
-}
-
-.request-user strong,
-.request-user small {
-  display: block;
-}
-
-.request-user small {
-  color: #7a8995;
-  margin-top: 3px;
-}
-
-.request time {
-  color: #9aa7b1;
-  font-size: 11px;
-}
-
-.request p {
-  color: #60717e;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 11px 0;
-}
-
-.badge {
-  display: inline-block;
-  border: 1px solid;
-  padding: 5px 9px;
-  border-radius: 30px;
-  font-size: 11px;
-  font-weight: bold;
-}
-
-.new {
-  color: #b77900;
-  background: #fff8e6;
-  border-color: #f1d890;
-}
-
-.progress {
-  color: #0871b4;
-  background: #eaf6ff;
-  border-color: #b7def5;
-}
-
-.done {
-  color: #087d58;
-  background: #e9faf4;
-  border-color: #b8ead8;
-}
-
-.untreated {
-  color: #c43d3d;
-  background: #fff0f0;
-  border-color: #f0baba;
-}
-
-.conversation {
-  min-width: 0;
-  background: #eef6fb;
+.conversation-panel {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .conversation-header {
-  background: white;
-  padding: 16px 20px;
-  border-bottom: 1px solid #e4eaf0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.conversation-header h2 {
-  margin: 0 0 4px;
-  font-size: 17px;
-}
-
-.conversation-header small {
-  color: #778692;
-}
-
-.header-status {
-  margin-left: auto;
-}
-
-.messages {
-  flex: 1;
-  padding: 25px;
-  overflow-y: auto;
-}
-
-.day {
-  text-align: center;
-  color: #8b9aa6;
-  background: white;
-  width: max-content;
-  margin: 0 auto 20px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 11px;
-}
-
-.message {
-  max-width: 75%;
-  padding: 13px 15px;
-  border-radius: 16px;
-  margin-bottom: 15px;
-  box-shadow: 0 3px 10px rgba(40,70,90,.05);
-}
-
-.received {
-  background: white;
-  border-top-left-radius: 5px;
-}
-
-.message p {
-  margin: 0;
-  line-height: 1.6;
-  font-size: 13px;
-}
-
-.message span {
-  display: block;
-  text-align: right;
-  margin-top: 7px;
-  color: #9aa6af;
-  font-size: 10px;
-}
-
-.system-message {
-  background: #e7f4fd;
-  border: 1px solid #c7e6f7;
-  font-size: 13px;
-}
-
-.system-message p {
-  margin-top: 7px;
-  color: #536b7b;
-}
-
-.intervention {
-  background: white;
-  border: 1px solid #dcebf4;
-  border-radius: 17px;
-  padding: 17px;
-  margin-top: 20px;
-}
-
-.intervention small,
-.detail-card small {
-  display: block;
-  color: #8a98a2;
-  font-weight: bold;
-  font-size: 10px;
-  letter-spacing: .5px;
-}
-
-.intervention h3 {
-  margin: 6px 0 15px;
-  font-size: 15px;
-}
-
-.status-buttons {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.status-buttons form {
-  margin: 0;
-}
-
-.status-buttons button {
-  width: 100%;
-  border: 1px solid #dce3e8;
-  background: white;
-  color: #667681;
-  border-radius: 10px;
-  padding: 9px 5px;
-  font-size: 11px;
-}
-
-.status-buttons button.active {
-  font-weight: bold;
-}
-
-.status-buttons button.active.new {
-  background: #fff8e6;
-}
-
-.status-buttons button.active.progress {
-  background: #eaf6ff;
-}
-
-.status-buttons button.active.done {
-  background: #e9faf4;
-}
-
-.status-buttons button.active.untreated {
-  background: #fff0f0;
-}
-
-.reply {
-  display: flex;
-  gap: 8px;
-  background: white;
-  border-top: 1px solid #e2e8ed;
-  padding: 13px;
-}
-
-.reply input {
-  flex: 1;
-  border: 1px solid #dce4e9;
-  background: #f6f8fa;
-  border-radius: 12px;
-  padding: 11px 13px;
-  outline: none;
-}
-
-.reply button {
-  border: 0;
-  background: #0f6ea8;
-  color: white;
-  border-radius: 12px;
-  padding: 0 18px;
-}
-
-.details {
-  background: white;
-  border-left: 1px solid #e4eaf0;
-}
-
-.detail-title {
-  padding: 20px;
-  border-bottom: 1px solid #e4eaf0;
-}
-
-.detail-title h3 {
-  margin: 7px 0 0;
-}
-
-.detail-card {
-  padding: 20px;
-}
-
-.detail-card > strong,
-.detail-card > .badge {
-  display: block;
-  margin: 6px 0 20px;
-}
-
-.detail-card hr {
-  border: 0;
-  border-top: 1px solid #edf0f2;
-  margin: 5px 0 20px;
-}
-
-.timeline {
-  margin-top: 15px;
-  border-left: 2px solid #d9ebf7;
-  padding-left: 14px;
-}
-
-.timeline div {
-  margin-bottom: 15px;
-}
-
-.timeline b,
-.timeline span {
-  display: block;
-}
-
-.timeline span {
-  color: #8a98a2;
-  font-size: 11px;
-  margin-top: 3px;
-}
-
-.modal-bg {
-  position: fixed;
-  inset: 0;
-  background: rgba(10,30,45,.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.modal {
-  width: 100%;
-  max-width: 500px;
-  background: white;
-  border-radius: 22px;
-  padding: 25px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.2);
-}
-
-.modal-header {
+  min-height: 85px;
+  padding: 17px 25px;
+  border-bottom: 1px solid #e7edf2;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.modal-header h2 {
-  margin: 0;
+.person {
+  display: flex;
+  align-items: center;
+  gap: 13px;
 }
 
-.close {
-  border: 0;
-  background: #f2f5f7;
-  width: 35px;
-  height: 35px;
-  border-radius: 10px;
-}
-
-.form-group {
-  margin-top: 17px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 7px;
+.person-avatar {
+  width: 48px;
+  height: 48px;
+  background: #e8f4fb;
+  color: #1478ad;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: bold;
+}
+
+.person h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.person p {
+  margin: 4px 0 0;
+  color: #788895;
   font-size: 13px;
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea {
-  width: 100%;
-  border: 1px solid #dce4e9;
-  border-radius: 11px;
-  padding: 12px;
-  outline: none;
+.ticket-status {
+  text-align: right;
 }
 
-.form-group textarea {
-  resize: vertical;
+.ticket-number {
+  display: block;
+  font-weight: bold;
+  color: #536575;
+  margin-bottom: 6px;
+  font-size: 13px;
 }
 
-.form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.form-actions button {
+.messages {
   flex: 1;
-  padding: 12px;
-  border-radius: 11px;
-  border: 1px solid #dce4e9;
+  overflow-y: auto;
+  padding: 28px;
+  background: #f3f8fc;
+}
+
+.message-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 18px;
+}
+
+.message-row.it-message {
+  justify-content: flex-end;
+}
+
+.message {
+  max-width: 70%;
+  padding: 13px 16px;
+  border-radius: 15px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(30,70,100,.06);
+}
+
+.message-it {
+  background: #e2f2fc;
+}
+
+.message-author {
+  color: #1478ad;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.message-role {
+  color: #82909b;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.message-text {
+  margin-top: 8px;
+  line-height: 1.5;
+  color: #263c4c;
+}
+
+.message-time {
+  text-align: right;
+  color: #91a0aa;
+  font-size: 10px;
+  margin-top: 7px;
+}
+
+/* =========================
+   INTERVENTION
+========================= */
+
+.intervention {
+  border-top: 1px solid #e4ebf0;
+  padding: 17px 20px;
   background: white;
 }
 
-.form-actions .primary {
-  background: #0f6ea8;
+.intervention-title {
+  font-size: 11px;
+  color: #82909b;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-bottom: 9px;
+}
+
+.status-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 13px;
+}
+
+.status-form {
+  display: inline;
+}
+
+.status-button {
+  border: 1px solid #dbe5ec;
+  background: white;
+  padding: 7px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.status-button:hover {
+  background: #f2f8fc;
+}
+
+.message-form {
+  display: flex;
+  gap: 10px;
+}
+
+.message-input {
+  flex: 1;
+  border: 1px solid #dce6ed;
+  border-radius: 12px;
+  padding: 12px 14px;
+  outline: none;
+  font-size: 14px;
+}
+
+.message-input:focus {
+  border-color: #1478ad;
+}
+
+.send-button {
+  width: 45px;
+  border: 0;
+  border-radius: 12px;
+  background: #1478ad;
   color: white;
-  border-color: #0f6ea8;
+  font-size: 18px;
+  cursor: pointer;
 }
 
-@media(max-width: 1100px) {
-  .workspace {
-    grid-template-columns: 280px 1fr;
-  }
+/* =========================
+   EMPTY
+========================= */
 
-  .details {
-    display: none;
-  }
+.empty-list {
+  text-align: center;
+  padding: 60px 20px;
+  color: #7c8b97;
 }
 
-@media(max-width: 750px) {
+.empty-icon {
+  font-size: 35px;
+  margin-bottom: 12px;
+}
+
+.empty-list p {
+  font-size: 13px;
+}
+
+.no-conversation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #83919c;
+}
+
+/* =========================
+   MOBILE
+========================= */
+
+@media (max-width: 950px) {
+
   .sidebar {
-    display: none;
+    width: 230px;
+  }
+
+  .helpdesk {
+    grid-template-columns: 290px 1fr;
   }
 
   .stats {
     grid-template-columns: repeat(2, 1fr);
-    padding: 12px;
   }
+}
 
-  .topbar {
-    padding: 0 15px;
-  }
+@media (max-width: 700px) {
 
-  .workspace {
+  .app {
     display: block;
   }
 
-  .requests {
-    border-right: 0;
+  .sidebar {
+    width: 100%;
+    min-height: auto;
   }
 
-  .conversation {
-    min-height: 650px;
+  .brand {
+    padding: 18px;
   }
 
-  .status-buttons {
+  .menu {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    gap: 5px;
+  }
+
+  .menu a {
+    white-space: nowrap;
+    margin: 0;
+    padding: 11px 12px;
+  }
+
+  .menu a span:last-child {
+    display: none;
+  }
+
+  .main {
+    width: 100%;
+  }
+
+  .topbar {
+    height: auto;
+    padding: 18px;
+  }
+
+  .top-title h2 {
+    font-size: 22px;
+  }
+
+  .user {
+    display: none;
+  }
+
+  .content {
+    padding: 12px;
+  }
+
+  .stats {
     grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .stat {
+    padding: 14px;
+  }
+
+  .stat-number {
+    font-size: 22px;
+  }
+
+  .helpdesk {
+    display: block;
+    min-height: auto;
+  }
+
+  .requests-panel {
+    border-right: 0;
+    max-height: 380px;
+  }
+
+  .conversation-panel {
+    min-height: 580px;
+  }
+
+  .message {
+    max-width: 85%;
+  }
+
+  .conversation-header {
+    padding: 15px;
   }
 
   .messages {
-    padding: 15px;
+    padding: 18px;
   }
 }
+
 </style>
 </head>
 
 <body>
 
-<div class="layout">
+<div class="app">
 
-<aside class="sidebar">
+  <!-- =========================
+       MENU GAUCHE
+  ========================== -->
 
-  <div class="logo">
-    <div class="logo-icon">D</div>
-    <div>
-      <h1>DDI HELPDESK</h1>
-      <small>Assistance Informatique</small>
-    </div>
-  </div>
+  <aside class="sidebar">
 
-  <nav>
-    <a href="/" class="active">💬 Canal DDI</a>
-    <a href="/?new=1">➕ Nouvelle demande</a>
-    <a href="/">📋 Toutes les demandes</a>
-    <a href="/">🔵 En cours</a>
-    <a href="/">🟢 Terminées</a>
-    <a href="/">🔴 Non traitées</a>
-    <a href="/">🔔 Notifications</a>
-    <a href="/">📊 Statistiques</a>
-    <a href="/">👥 Utilisateurs</a>
-  </nav>
+    <div class="brand">
 
-  <div class="logout">🚪 Déconnexion</div>
+      <div class="brand-box">
 
-</aside>
+        <div class="brand-logo">
+          D
+        </div>
 
-<main class="main">
+        <div>
+          <h1>DDI HELPDESK</h1>
+          <p>Assistance Informatique</p>
+        </div>
 
-<header class="topbar">
-
-  <div>
-    <h2>Canal DDI</h2>
-    <p>Suivi des demandes d'assistance</p>
-  </div>
-
-  <div class="profile">
-    <div class="profile-avatar">IT</div>
-    <div>
-      <strong>Service Informatique</strong>
-      <small style="display:block;color:#7b8994">Administrateur</small>
-    </div>
-  </div>
-
-</header>
-
-<section class="stats">
-
-  <div class="stat">
-    <div class="stat-top">
-      <span>🆕</span>
-      <strong>${nouveau}</strong>
-    </div>
-    <small>Nouvelles</small>
-  </div>
-
-  <div class="stat">
-    <div class="stat-top">
-      <span>🔵</span>
-      <strong>${encours}</strong>
-    </div>
-    <small>En cours</small>
-  </div>
-
-  <div class="stat">
-    <div class="stat-top">
-      <span>🟢</span>
-      <strong>${termine}</strong>
-    </div>
-    <small>Terminées</small>
-  </div>
-
-  <div class="stat">
-    <div class="stat-top">
-      <span>🔴</span>
-      <strong>${nontraite}</strong>
-    </div>
-    <small>Non traitées</small>
-  </div>
-
-</section>
-
-<div class="workspace">
-
-<section class="requests">
-
-  <div class="requests-header">
-
-    <div class="requests-header-row">
-      <h3>Demandes</h3>
-      <span class="count">${total}</span>
-    </div>
-
-    <a class="new-request" href="/?new=1">
-      ➕ Nouvelle demande
-    </a>
-
-  </div>
-
-  ${list}
-
-</section>
-
-<section class="conversation">
-
-${conversation}
-
-</section>
-
-<aside class="details">
-
-  <div class="detail-title">
-    <small style="color:#8a98a2">DÉTAILS DE LA DEMANDE</small>
-    ${
-      selected
-        ? `<h3>${escapeHtml(selected.id)}</h3>`
-        : `<h3>Aucune demande</h3>`
-    }
-  </div>
-
-  ${global.selectedHistory || ""}
-
-</aside>
-
-</div>
-
-</main>
-
-</div>
-
-${
-  global.showNew
-    ? `
-<div class="modal-bg">
-
-  <div class="modal">
-
-    <div class="modal-header">
-      <div>
-        <h2>Nouvelle demande</h2>
-        <p style="color:#7a8995;font-size:13px">
-          Enregistrer une demande d'assistance
-        </p>
       </div>
 
-      <a href="/" style="text-decoration:none">
-        <button class="close">✕</button>
+    </div>
+
+    <nav class="menu">
+
+      <a href="/" class="${view === "all" ? "active" : ""}">
+        <span class="menu-icon">💬</span>
+        <span>Canal DDI</span>
       </a>
-    </div>
 
-    <form method="POST" action="/new">
+      <a href="/?view=new" class="${view === "new" ? "active" : ""}">
+        <span class="menu-icon">➕</span>
+        <span>Nouvelle demande</span>
+      </a>
 
-      <div class="form-group">
-        <label>Nom du demandeur</label>
-        <input
-          name="name"
-          placeholder="Ex : Mamadou Diallo"
-          required
-        >
+      <a href="/?view=all" class="${view === "all" ? "active" : ""}">
+        <span class="menu-icon">📋</span>
+        <span>Toutes les demandes</span>
+      </a>
+
+      <a href="/?view=progress" class="${view === "progress" ? "active" : ""}">
+        <span class="menu-icon">🔵</span>
+        <span>En cours</span>
+      </a>
+
+      <a href="/?view=done" class="${view === "done" ? "active" : ""}">
+        <span class="menu-icon">🟢</span>
+        <span>Terminées</span>
+      </a>
+
+      <a href="/?view=untreated" class="${view === "untreated" ? "active" : ""}">
+        <span class="menu-icon">🔴</span>
+        <span>Non traitées</span>
+      </a>
+
+      <a href="#">
+        <span class="menu-icon">🔔</span>
+        <span>Notifications</span>
+      </a>
+
+      <a href="#">
+        <span class="menu-icon">📊</span>
+        <span>Statistiques</span>
+      </a>
+
+      <a href="#">
+        <span class="menu-icon">👥</span>
+        <span>Utilisateurs</span>
+      </a>
+
+    </nav>
+
+  </aside>
+
+
+  <!-- =========================
+       CONTENU
+  ========================== -->
+
+  <main class="main">
+
+    <header class="topbar">
+
+      <div class="top-title">
+
+        <h2>${pageTitle}</h2>
+
+        <p>
+          Suivi simple des demandes d'assistance
+        </p>
+
       </div>
 
-      <div class="form-group">
-        <label>Service</label>
+      <div class="user">
 
-        <select name="service" required>
-          <option value="">Sélectionner un service</option>
-          <option>Direction</option>
-          <option>Ressources Humaines</option>
-          <option>Comptabilité</option>
-          <option>Commercial</option>
-          <option>Administration</option>
-          <option>Informatique</option>
-        </select>
+        <div class="user-avatar">
+          IT
+        </div>
+
+        <div>
+          <strong>Service Informatique</strong>
+          <span>Administrateur</span>
+        </div>
+
       </div>
 
-      <div class="form-group">
-        <label>Problème rencontré</label>
+    </header>
 
-        <textarea
-          name="message"
-          rows="5"
-          placeholder="Décrivez le problème..."
-          required
-        ></textarea>
+
+    <section class="content">
+
+
+      <!-- =========================
+           STATISTIQUES RAPIDES
+      ========================== -->
+
+      <div class="stats">
+
+        <div class="stat">
+
+          <div class="stat-top">
+            <span class="stat-icon">🆕</span>
+            <span class="stat-number">${counts.nouveau}</span>
+          </div>
+
+          <div class="stat-label">
+            Nouvelles
+          </div>
+
+        </div>
+
+
+        <div class="stat">
+
+          <div class="stat-top">
+            <span class="stat-icon">🔵</span>
+            <span class="stat-number">${counts.progress}</span>
+          </div>
+
+          <div class="stat-label">
+            En cours
+          </div>
+
+        </div>
+
+
+        <div class="stat">
+
+          <div class="stat-top">
+            <span class="stat-icon">🟢</span>
+            <span class="stat-number">${counts.done}</span>
+          </div>
+
+          <div class="stat-label">
+            Terminées
+          </div>
+
+        </div>
+
+
+        <div class="stat">
+
+          <div class="stat-top">
+            <span class="stat-icon">🔴</span>
+            <span class="stat-number">${counts.untreated}</span>
+          </div>
+
+          <div class="stat-label">
+            Non traitées
+          </div>
+
+        </div>
+
       </div>
 
-      <div class="form-actions">
-        <a
-          href="/"
-          style="flex:1;text-decoration:none"
-        >
-          <button type="button" style="width:100%">
-            Annuler
-          </button>
-        </a>
 
-        <button class="primary" type="submit">
-          Créer la demande
-        </button>
+      <!-- =========================
+           HELP DESK
+      ========================== -->
+
+      <div class="helpdesk">
+
+
+        <!-- LISTE DES DEMANDES -->
+
+        <div class="requests-panel">
+
+          <div class="requests-header">
+
+            <div class="requests-title">
+
+              <h3>Demandes</h3>
+
+              <span class="counter">
+                ${filteredRequests.length}
+              </span>
+
+            </div>
+
+            <a href="/?new=1" class="new-button">
+              ➕ Nouvelle demande
+            </a>
+
+          </div>
+
+          <div class="request-list">
+
+            ${requestList}
+
+          </div>
+
+        </div>
+
+
+        <!-- CONVERSATION -->
+
+        <div class="conversation-panel">
+
+          ${
+            selected
+              ? `
+
+          <div class="conversation-header">
+
+            <div class="person">
+
+              <div class="person-avatar">
+                ${escapeHtml(selected.name.charAt(0).toUpperCase())}
+              </div>
+
+              <div>
+
+                <h3>
+                  ${escapeHtml(selected.name)}
+                </h3>
+
+                <p>
+                  ${escapeHtml(selected.service)}
+                </p>
+
+              </div>
+
+            </div>
+
+            <div class="ticket-status">
+
+              <span class="ticket-number">
+                ${escapeHtml(selected.id)}
+              </span>
+
+              <span class="status ${statusClass(selected.status)}">
+                ${statusIcon(selected.status)}
+                ${escapeHtml(selected.status)}
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div class="messages">
+
+            ${conversation}
+
+          </div>
+
+
+          <div class="intervention">
+
+            <div class="intervention-title">
+              Intervention informatique
+            </div>
+
+
+            <div class="status-actions">
+
+              <form method="POST" action="/status" class="status-form">
+                <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
+                <input type="hidden" name="status" value="Nouveau">
+                <button class="status-button">
+                  🆕 Nouveau
+                </button>
+              </form>
+
+              <form method="POST" action="/status" class="status-form">
+                <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
+                <input type="hidden" name="status" value="En cours">
+                <button class="status-button">
+                  🔵 En cours
+                </button>
+              </form>
+
+              <form method="POST" action="/status" class="status-form">
+                <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
+                <input type="hidden" name="status" value="Terminé">
+                <button class="status-button">
+                  🟢 Terminé
+                </button>
+              </form>
+
+              <form method="POST" action="/status" class="status-form">
+                <input type="hidden" name="id" value="${escapeHtml(selected.id)}">
+                <input type="hidden" name="status" value="Non traité">
+                <button class="status-button">
+                  🔴 Non traité
+                </button>
+              </form>
+
+            </div>
+
+
+            <form method="POST" action="/message" class="message-form">
+
+              <input
+                type="hidden"
+                name="id"
+                value="${escapeHtml(selected.id)}"
+              >
+
+              <input
+                class="message-input"
+                type="text"
+                name="message"
+                placeholder="Écrire une intervention..."
+                required
+              >
+
+              <button class="send-button" type="submit">
+                ➤
+              </button>
+
+            </form>
+
+          </div>
+
+          `
+              : `
+              <div class="no-conversation">
+                Sélectionnez une demande.
+              </div>
+              `
+          }
+
+        </div>
+
       </div>
 
-    </form>
+    </section>
 
-  </div>
+  </main>
 
 </div>
-`
-    : ""
-}
 
 </body>
 </html>
 `;
 }
 
-app.use((req, res, next) => {
-  global.currentUrl = req.url.split("?")[1] || "";
-  global.showNew = new URLSearchParams(req.url.split("?")[1] || "").get("new") === "1";
-  global.selectedHistory = "";
-  next();
-});
+/* =========================
+   ROUTE PRINCIPALE
+========================= */
 
 app.get("/", (req, res) => {
-  res.send(renderApp());
+
+  const view = req.query.view || "all";
+
+  const selectedId = req.query.id || null;
+
+  res.send(renderApp(selectedId, view));
+
 });
+
+
+/* =========================
+   NOUVELLE DEMANDE
+========================= */
+
+app.get("/new", (req, res) => {
+
+  res.send(`
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Nouvelle demande - DDI HELPDESK</title>
+
+<style>
+
+body {
+  margin: 0;
+  background: #f3f7fa;
+  font-family: Arial, sans-serif;
+  color: #183042;
+}
+
+.box {
+  max-width: 600px;
+  margin: 60px auto;
+  background: white;
+  padding: 35px;
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.07);
+}
+
+h1 {
+  margin-top: 0;
+}
+
+label {
+  display: block;
+  margin-top: 18px;
+  margin-bottom: 7px;
+  font-weight: bold;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #dce6ed;
+  border-radius: 10px;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+button {
+  margin-top: 22px;
+  width: 100%;
+  padding: 14px;
+  background: #1478ad;
+  border: 0;
+  color: white;
+  border-radius: 10px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.back {
+  display: block;
+  margin-top: 15px;
+  text-align: center;
+  color: #1478ad;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="box">
+
+<h1>➕ Nouvelle demande</h1>
+
+<p>
+Créer une nouvelle demande d'assistance informatique.
+</p>
+
+<form method="POST" action="/new">
+
+<label>Nom du demandeur</label>
+
+<input
+  type="text"
+  name="name"
+  placeholder="Ex : Mamadou"
+  required
+>
+
+<label>Service</label>
+
+<select name="service" required>
+
+<option value="">Sélectionner</option>
+<option>Direction</option>
+<option>Comptabilité</option>
+<option>Ressources Humaines</option>
+<option>Commercial</option>
+<option>Administration</option>
+<option>Autre</option>
+
+</select>
+
+<label>Type de problème</label>
+
+<input
+  type="text"
+  name="subject"
+  placeholder="Ex : Ordinateur, Internet, Imprimante..."
+  required
+>
+
+<label>Description</label>
+
+<textarea
+  name="message"
+  placeholder="Décrire le problème..."
+  required
+></textarea>
+
+<button type="submit">
+Créer la demande
+</button>
+
+</form>
+
+<a class="back" href="/">
+← Retour au Canal DDI
+</a>
+
+</div>
+
+</body>
+
+</html>
+`);
+
+});
+
+
+/* =========================
+   CREATION DEMANDE
+========================= */
 
 app.post("/new", (req, res) => {
-  const { name, service, message } = req.body;
 
-  if (!name || !service || !message) {
-    return res.redirect("/");
-  }
-
-  const now = new Date().toLocaleTimeString("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const request = {
-    id: `DDI-${String(nextId).padStart(4, "0")}`,
+  const {
     name,
     service,
-    message,
+    subject,
+    message
+  } = req.body;
+
+  const id =
+    "DDI-" +
+    String(nextId++).padStart(4, "0");
+
+  const newRequest = {
+
+    id,
+
+    name:
+      String(name || "Inconnu").trim(),
+
+    service:
+      String(service || "Non précisé").trim(),
+
+    subject:
+      String(subject || "Assistance").trim(),
+
+    message:
+      String(message || "").trim(),
+
     status: "Nouveau",
-    time: now,
+
+    time:
+      new Date().toLocaleTimeString(
+        "fr-FR",
+        {
+          hour: "2-digit",
+          minute: "2-digit"
+        }
+      ),
+
+    messages: [
+
+      {
+        sender:
+          String(name || "Employé").trim(),
+
+        role: "Employé",
+
+        text:
+          String(message || "").trim(),
+
+        time:
+          new Date().toLocaleTimeString(
+            "fr-FR",
+            {
+              hour: "2-digit",
+              minute: "2-digit"
+            }
+          ),
+
+        type: "employee"
+      }
+
+    ]
+
   };
 
-  nextId++;
-  requests.unshift(request);
+  requests.unshift(newRequest);
 
-  res.redirect(`/?id=${request.id}`);
+  res.redirect("/?id=" + encodeURIComponent(id));
+
 });
+
+
+/* =========================
+   CHANGEMENT DE STATUT
+========================= */
 
 app.post("/status", (req, res) => {
-  const { id, status } = req.body;
 
-  const allowed = [
-    "Nouveau",
-    "En cours",
-    "Terminé",
-    "Non traité",
-  ];
+  const {
+    id,
+    status
+  } = req.body;
 
-  if (!allowed.includes(status)) {
-    return res.redirect("/");
-  }
-
-  const request = requests.find((r) => r.id === id);
+  const request =
+    requests.find(r => r.id === id);
 
   if (request) {
+
     request.status = status;
+
+    request.messages.push({
+
+      sender: "Service Informatique",
+
+      role: "IT",
+
+      text:
+        "Statut de la demande changé en : " +
+        status,
+
+      time:
+        new Date().toLocaleTimeString(
+          "fr-FR",
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        ),
+
+      type: "it"
+
+    });
+
   }
 
-  res.redirect(`/?id=${encodeURIComponent(id)}`);
+  res.redirect(
+    "/?id=" +
+    encodeURIComponent(id)
+  );
+
 });
+
+
+/* =========================
+   MESSAGE IT
+========================= */
 
 app.post("/message", (req, res) => {
-  const { id } = req.body;
 
-  res.redirect(`/?id=${encodeURIComponent(id)}`);
+  const {
+    id,
+    message
+  } = req.body;
+
+  const request =
+    requests.find(r => r.id === id);
+
+  if (request && message && message.trim()) {
+
+    request.messages.push({
+
+      sender: "Service Informatique",
+
+      role: "IT",
+
+      text: message.trim(),
+
+      time:
+        new Date().toLocaleTimeString(
+          "fr-FR",
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        ),
+
+      type: "it"
+
+    });
+
+    if (request.status === "Nouveau") {
+      request.status = "En cours";
+    }
+
+  }
+
+  res.redirect(
+    "/?id=" +
+    encodeURIComponent(id)
+  );
+
 });
 
+
+/* =========================
+   SERVEUR
+========================= */
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`DDI HELPDESK lancé sur le port ${PORT}`);
+
+  console.log(
+    "DDI HELPDESK démarré sur le port " + PORT
+  );
+
 });
