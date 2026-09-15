@@ -1,8 +1,57 @@
 const express = require("express");
+const session = require("express-session");
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "DDI-HELPDESK-SECRET-2026",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 8
+    }
+  })
+);
+
+/* =========================================================
+   UTILISATEURS
+========================================================= */
+
+const users = [
+  {
+    id: 1,
+    nom: "Administrateur DDI",
+    username: "admin",
+    password: "1234",
+    role: "Administrateur",
+    service: "Service Informatique"
+  },
+  {
+    id: 2,
+    nom: "Direction",
+    username: "direction",
+    password: "1234",
+    role: "Direction",
+    service: "Direction"
+  },
+  {
+    id: 3,
+    nom: "Ressources Humaines",
+    username: "rh",
+    password: "1234",
+    role: "RH",
+    service: "Ressources Humaines"
+  }
+];
+
+/* =========================================================
+   DEMANDES
+========================================================= */
 
 let requests = [
   {
@@ -83,6 +132,10 @@ let requests = [
 
 let nextId = 26;
 
+/* =========================================================
+   OUTILS
+========================================================= */
+
 function escapeHtml(text = "") {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -109,15 +162,216 @@ function stats() {
   };
 }
 
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.redirect("/login");
+  }
+
+  next();
+}
+
+/* =========================================================
+   PAGE DE CONNEXION
+========================================================= */
+
+function loginPage(error = "") {
+  return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Connexion - DDI HELPDESK</title>
+
+<style>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(135deg, #087ee8, #075fc0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-box {
+  width: 100%;
+  max-width: 410px;
+  background: white;
+  border-radius: 18px;
+  padding: 35px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.18);
+}
+
+.logo {
+  width: 58px;
+  height: 58px;
+  background: #087ee8;
+  color: white;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+h1 {
+  font-size: 25px;
+  color: #172033;
+}
+
+.subtitle {
+  color: #718096;
+  font-size: 13px;
+  margin-top: 7px;
+  margin-bottom: 28px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 7px;
+  color: #344054;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+input {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #dfe6ee;
+  border-radius: 9px;
+  font-size: 14px;
+  outline: none;
+}
+
+input:focus {
+  border-color: #087ee8;
+}
+
+button {
+  width: 100%;
+  border: none;
+  background: #087ee8;
+  color: white;
+  padding: 13px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #066bc5;
+}
+
+.error {
+  background: #fdebec;
+  color: #c92a36;
+  padding: 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-bottom: 18px;
+}
+
+.footer {
+  text-align: center;
+  color: #98a2b3;
+  font-size: 11px;
+  margin-top: 24px;
+}
+
+@media(max-width:500px) {
+  .login-box {
+    padding: 28px 22px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="login-box">
+
+  <div class="logo">D</div>
+
+  <h1>Bienvenue sur DDI HELPDESK</h1>
+
+  <p class="subtitle">
+    Connectez-vous pour accéder au suivi des demandes informatiques.
+  </p>
+
+  ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
+
+  <form method="POST" action="/login">
+
+    <div class="form-group">
+      <label>Nom d'utilisateur</label>
+
+      <input
+        type="text"
+        name="username"
+        placeholder="Votre nom d'utilisateur"
+        required
+        autofocus>
+    </div>
+
+    <div class="form-group">
+      <label>Mot de passe</label>
+
+      <input
+        type="password"
+        name="password"
+        placeholder="Votre mot de passe"
+        required>
+    </div>
+
+    <button type="submit">
+      Se connecter
+    </button>
+
+  </form>
+
+  <div class="footer">
+    DDI HELPDESK · Service Informatique
+  </div>
+
+</div>
+
+</body>
+</html>
+`;
+}
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
 function sidebar(active = "dashboard") {
   return `
     <aside class="sidebar">
+
       <div class="brand">
+
         <div class="brand-icon">D</div>
+
         <div>
           <strong>DDI</strong>
           <span>HELPDESK</span>
         </div>
+
       </div>
 
       <div class="menu-title">MENU</div>
@@ -153,29 +407,46 @@ function sidebar(active = "dashboard") {
       </a>
 
       <div class="sidebar-bottom">
+
         <div class="online">
           <span class="online-dot"></span>
-          Service Informatique
+          ${escapeHtml(activeUserName())}
         </div>
 
-        <a href="/" class="logout">
+        <a href="/logout" class="logout">
           ⇥ Déconnexion
         </a>
+
       </div>
+
     </aside>
   `;
 }
 
+function activeUserName() {
+  return "Service Informatique";
+}
+
+/* =========================================================
+   LAYOUT
+========================================================= */
+
 function layout(content, active = "dashboard") {
+
   return `
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
+
 <meta charset="UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>DDI HELPDESK</title>
 
 <style>
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -307,6 +578,10 @@ a {
   padding: 15px 12px 4px;
   font-size: 13px;
   opacity: .85;
+}
+
+.logout:hover {
+  opacity: 1;
 }
 
 /* MAIN */
@@ -537,7 +812,12 @@ a {
   width: 145px;
   height: 145px;
   border-radius: 50%;
-  background: conic-gradient(#19a463 0deg, #19a463 var(--degree), #edf2f7 var(--degree), #edf2f7 360deg);
+  background: conic-gradient(
+    #19a463 0deg,
+    #19a463 var(--degree),
+    #edf2f7 var(--degree),
+    #edf2f7 360deg
+  );
   display: flex;
   align-items: center;
   justify-content: center;
@@ -567,7 +847,7 @@ a {
   font-size: 12px;
 }
 
-/* RECENT */
+/* TABLE */
 
 .recent {
   width: 100%;
@@ -598,6 +878,8 @@ a {
   font-weight: 700;
 }
 
+/* STATUS */
+
 .status {
   display: inline-block;
   padding: 5px 9px;
@@ -626,7 +908,7 @@ a {
   color: #cf3340;
 }
 
-/* CANAL */
+/* REQUESTS */
 
 .request-list {
   display: flex;
@@ -847,11 +1129,6 @@ a {
   font-size: 11px;
 }
 
-.status-btn:hover {
-  border-color: #087ee8;
-  color: #087ee8;
-}
-
 /* EMPTY */
 
 .empty {
@@ -863,6 +1140,7 @@ a {
 /* MOBILE */
 
 @media (max-width: 1050px) {
+
   .stat-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -870,9 +1148,11 @@ a {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
+
 }
 
 @media (max-width: 750px) {
+
   .sidebar {
     width: 70px;
     padding: 15px 8px;
@@ -932,891 +1212,1723 @@ a {
   .request-right {
     text-align: left;
   }
+
 }
+
 </style>
+
 </head>
 
 <body>
+
 <div class="app">
 
 ${sidebar(active)}
 
 <main class="main">
 
-  <header class="topbar">
-    <div class="topbar-title">
-      DDI HELPDESK / <strong>${active === "dashboard" ? "Tableau de bord" : active === "canal" ? "Canal DDI" : active === "new" ? "Nouvelle demande" : "Gestion"}</strong>
+<header class="topbar">
+
+  <div class="topbar-title">
+    DDI HELPDESK /
+    <strong>
+      ${
+        active === "dashboard"
+          ? "Tableau de bord"
+          : active === "canal"
+          ? "Canal DDI"
+          : active === "new"
+          ? "Nouvelle demande"
+          : "Gestion"
+      }
+    </strong>
+  </div>
+
+  <div class="user">
+
+    <span>
+      Service Informatique
+    </span>
+
+    <div class="avatar">
+      IT
     </div>
 
-    <div class="user">
-      <span>Service Informatique</span>
-      <div class="avatar">IT</div>
-    </div>
-  </header>
+  </div>
 
-  ${content}
+</header>
+
+${content}
 
 </main>
+
 </div>
+
 </body>
+
 </html>
 `;
 }
 
-/* =========================
+/* =========================================================
    TABLEAU DE BORD
-========================= */
+========================================================= */
 
 function dashboardPage() {
+
   const s = stats();
 
   const resolutionRate =
-    s.total === 0 ? 0 : Math.round((s.termine / s.total) * 100);
+    s.total === 0
+      ? 0
+      : Math.round((s.termine / s.total) * 100);
 
-  const degree = Math.round((resolutionRate / 100) * 360);
+  const degree =
+    Math.round((resolutionRate / 100) * 360);
 
   const services = {};
 
   requests.forEach(r => {
-    services[r.service] = (services[r.service] || 0) + 1;
+    services[r.service] =
+      (services[r.service] || 0) + 1;
   });
 
-  const serviceRows = Object.entries(services)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  const serviceRows =
+    Object.entries(services)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
 
   const maxService =
-    serviceRows.length ? Math.max(...serviceRows.map(x => x[1])) : 1;
+    serviceRows.length
+      ? Math.max(...serviceRows.map(x => x[1]))
+      : 1;
 
-  const recent = requests.slice(0, 5);
+  const recent =
+    requests.slice(0, 5);
 
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Tableau de bord</h1>
-          <p>Vue globale du suivi des demandes informatiques</p>
-        </div>
+<section class="content">
 
-        <a href="/new" class="btn">＋ Nouvelle demande</a>
-      </div>
+<div class="page-title">
 
-      <div class="stat-grid">
+  <div>
 
-        <div class="stat-card">
-          <div class="stat-label">TOTAL DES REQUÊTES</div>
-          <div class="stat-number blue">${s.total}</div>
-          <div class="stat-sub">Toutes les demandes</div>
-        </div>
+    <h1>
+      Tableau de bord
+    </h1>
 
-        <div class="stat-card">
-          <div class="stat-label">NOUVELLES</div>
-          <div class="stat-number blue">${s.nouveau}</div>
-          <div class="stat-sub">À prendre en charge</div>
-        </div>
+    <p>
+      Vue globale du suivi des demandes informatiques
+    </p>
 
-        <div class="stat-card">
-          <div class="stat-label">EN COURS</div>
-          <div class="stat-number orange">${s.cours}</div>
-          <div class="stat-sub">Interventions en cours</div>
-        </div>
+  </div>
 
-        <div class="stat-card">
-          <div class="stat-label">TERMINÉES</div>
-          <div class="stat-number green">${s.termine}</div>
-          <div class="stat-sub">Demandes résolues</div>
-        </div>
+  <a href="/new" class="btn">
+    ＋ Nouvelle demande
+  </a>
 
-        <div class="stat-card">
-          <div class="stat-label">NON TRAITÉES</div>
-          <div class="stat-number red">${s.nontraite}</div>
-          <div class="stat-sub">En attente d'intervention</div>
-        </div>
+</div>
 
-      </div>
+<div class="stat-grid">
 
-      <div class="dashboard-grid">
+<div class="stat-card">
 
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Répartition des demandes</h2>
-            <span>Suivi actuel</span>
-          </div>
+  <div class="stat-label">
+    TOTAL DES REQUÊTES
+  </div>
 
-          <div class="panel-body">
+  <div class="stat-number blue">
+    ${s.total}
+  </div>
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>🆕 Nouvelles</span>
-                <span>${s.nouveau}</span>
-              </div>
-              <div class="bar">
-                <div class="bar-fill" style="width:${s.total ? (s.nouveau / s.total) * 100 : 0}%"></div>
-              </div>
-            </div>
+  <div class="stat-sub">
+    Toutes les demandes
+  </div>
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>🔵 En cours</span>
-                <span>${s.cours}</span>
-              </div>
-              <div class="bar">
-                <div class="bar-fill orange" style="width:${s.total ? (s.cours / s.total) * 100 : 0}%"></div>
-              </div>
-            </div>
+</div>
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>🟢 Terminées</span>
-                <span>${s.termine}</span>
-              </div>
-              <div class="bar">
-                <div class="bar-fill green" style="width:${s.total ? (s.termine / s.total) * 100 : 0}%"></div>
-              </div>
-            </div>
+<div class="stat-card">
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>🔴 Non traitées</span>
-                <span>${s.nontraite}</span>
-              </div>
-              <div class="bar">
-                <div class="bar-fill red" style="width:${s.total ? (s.nontraite / s.total) * 100 : 0}%"></div>
-              </div>
-            </div>
+  <div class="stat-label">
+    NOUVELLES
+  </div>
 
-          </div>
-        </div>
+  <div class="stat-number blue">
+    ${s.nouveau}
+  </div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Taux de résolution</h2>
-            <span>Global</span>
-          </div>
+  <div class="stat-sub">
+    À prendre en charge
+  </div>
 
-          <div class="panel-body resolution">
+</div>
 
-            <div class="circle" style="--degree:${degree}deg">
-              <div class="circle-value">${resolutionRate}%</div>
-            </div>
+<div class="stat-card">
 
-            <div class="resolution-text">
-              ${s.termine} demande(s) terminée(s) sur ${s.total}
-            </div>
+  <div class="stat-label">
+    EN COURS
+  </div>
 
-          </div>
-        </div>
+  <div class="stat-number orange">
+    ${s.cours}
+  </div>
 
-      </div>
+  <div class="stat-sub">
+    Interventions en cours
+  </div>
 
-      <div class="dashboard-grid">
+</div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Demandes par service</h2>
-            <span>Services les plus concernés</span>
-          </div>
+<div class="stat-card">
 
-          <div class="panel-body">
+  <div class="stat-label">
+    TERMINÉES
+  </div>
 
-            ${
-              serviceRows.length
-                ? serviceRows.map(([service, count]) => `
-                    <div class="bar-row">
-                      <div class="bar-info">
-                        <span>${escapeHtml(service)}</span>
-                        <span>${count}</span>
-                      </div>
+  <div class="stat-number green">
+    ${s.termine}
+  </div>
 
-                      <div class="bar">
-                        <div
-                          class="bar-fill"
-                          style="width:${(count / maxService) * 100}%">
-                        </div>
-                      </div>
-                    </div>
-                  `).join("")
-                : `<div class="empty">Aucune donnée disponible.</div>`
-            }
+  <div class="stat-sub">
+    Demandes résolues
+  </div>
 
-          </div>
-        </div>
+</div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Indicateur IT</h2>
-            <span>Situation actuelle</span>
-          </div>
+<div class="stat-card">
 
-          <div class="panel-body">
+  <div class="stat-label">
+    NON TRAITÉES
+  </div>
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>Demandes prises en charge</span>
-                <span>${s.cours + s.termine}</span>
-              </div>
+  <div class="stat-number red">
+    ${s.nontraite}
+  </div>
 
-              <div class="bar">
-                <div
-                  class="bar-fill green"
-                  style="width:${s.total ? ((s.cours + s.termine) / s.total) * 100 : 0}%">
-                </div>
-              </div>
-            </div>
+  <div class="stat-sub">
+    En attente d'intervention
+  </div>
 
-            <div class="bar-row">
-              <div class="bar-info">
-                <span>Demandes en attente</span>
-                <span>${s.nouveau + s.nontraite}</span>
-              </div>
+</div>
 
-              <div class="bar">
-                <div
-                  class="bar-fill red"
-                  style="width:${s.total ? ((s.nouveau + s.nontraite) / s.total) * 100 : 0}%">
-                </div>
-              </div>
-            </div>
+</div>
 
-            <div style="margin-top:25px;padding:15px;background:#f6f9fc;border-radius:10px;">
-              <div style="font-size:12px;color:#718096;margin-bottom:6px;">
-                État du service informatique
-              </div>
+<div class="dashboard-grid">
 
-              <div style="font-size:18px;font-weight:700;">
-                ${s.nontraite > 0 ? "Des demandes nécessitent une attention" : "Toutes les demandes sont prises en charge"}
-              </div>
-            </div>
+<div class="panel">
 
-          </div>
-        </div>
+<div class="panel-header">
 
-      </div>
+<h2>
+Répartition des demandes
+</h2>
 
-      <div class="panel">
+<span>
+Suivi actuel
+</span>
 
-        <div class="panel-header">
-          <h2>Dernières demandes</h2>
-          <a href="/requests" style="color:#087ee8;font-size:12px;">
-            Voir toutes les demandes →
-          </a>
-        </div>
+</div>
 
-        ${
-          recent.length
-            ? `
-              <table class="recent">
-                <thead>
-                  <tr>
-                    <th>RÉFÉRENCE</th>
-                    <th>DEMANDEUR</th>
-                    <th>SERVICE</th>
-                    <th>DEMANDE</th>
-                    <th>STATUT</th>
-                  </tr>
-                </thead>
+<div class="panel-body">
 
-                <tbody>
+<div class="bar-row">
 
-                  ${recent.map(r => `
-                    <tr>
-                      <td>
-                        <a href="/request?id=${encodeURIComponent(r.id)}" class="id">
-                          ${escapeHtml(r.id)}
-                        </a>
-                      </td>
+<div class="bar-info">
 
-                      <td>${escapeHtml(r.nom)}</td>
+<span>
+🆕 Nouvelles
+</span>
 
-                      <td>${escapeHtml(r.service)}</td>
+<span>
+${s.nouveau}
+</span>
 
-                      <td>${escapeHtml(r.sujet)}</td>
+</div>
 
-                      <td>
-                        <span class="status ${statusClass(r.status)}">
-                          ${escapeHtml(r.status)}
-                        </span>
-                      </td>
-                    </tr>
-                  `).join("")}
+<div class="bar">
 
-                </tbody>
-              </table>
-            `
-            : `<div class="empty">Aucune demande enregistrée.</div>`
-        }
+<div
+class="bar-fill"
+style="width:${s.total ? (s.nouveau / s.total) * 100 : 0}%">
+</div>
 
-      </div>
+</div>
 
-    </section>
-  `, "dashboard");
+</div>
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+🔵 En cours
+</span>
+
+<span>
+${s.cours}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill orange"
+style="width:${s.total ? (s.cours / s.total) * 100 : 0}%">
+</div>
+
+</div>
+
+</div>
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+🟢 Terminées
+</span>
+
+<span>
+${s.termine}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill green"
+style="width:${s.total ? (s.termine / s.total) * 100 : 0}%">
+</div>
+
+</div>
+
+</div>
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+🔴 Non traitées
+</span>
+
+<span>
+${s.nontraite}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill red"
+style="width:${s.total ? (s.nontraite / s.total) * 100 : 0}%">
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<div class="panel-header">
+
+<h2>
+Taux de résolution
+</h2>
+
+<span>
+Global
+</span>
+
+</div>
+
+<div class="panel-body resolution">
+
+<div
+class="circle"
+style="--degree:${degree}deg">
+
+<div class="circle-value">
+${resolutionRate}%
+</div>
+
+</div>
+
+<div class="resolution-text">
+
+${s.termine}
+demande(s) terminée(s)
+sur ${s.total}
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="dashboard-grid">
+
+<div class="panel">
+
+<div class="panel-header">
+
+<h2>
+Demandes par service
+</h2>
+
+<span>
+Services les plus concernés
+</span>
+
+</div>
+
+<div class="panel-body">
+
+${
+  serviceRows.length
+
+  ? serviceRows.map(([service, count]) => `
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+${escapeHtml(service)}
+</span>
+
+<span>
+${count}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill"
+style="width:${(count / maxService) * 100}%">
+</div>
+
+</div>
+
+</div>
+
+`).join("")
+
+  : `<div class="empty">
+      Aucune donnée disponible.
+     </div>`
 }
 
-/* =========================
+</div>
+
+</div>
+
+<div class="panel">
+
+<div class="panel-header">
+
+<h2>
+Indicateur IT
+</h2>
+
+<span>
+Situation actuelle
+</span>
+
+</div>
+
+<div class="panel-body">
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+Demandes prises en charge
+</span>
+
+<span>
+${s.cours + s.termine}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill green"
+style="width:${
+  s.total
+    ? ((s.cours + s.termine) / s.total) * 100
+    : 0
+}%">
+</div>
+
+</div>
+
+</div>
+
+<div class="bar-row">
+
+<div class="bar-info">
+
+<span>
+Demandes en attente
+</span>
+
+<span>
+${s.nouveau + s.nontraite}
+</span>
+
+</div>
+
+<div class="bar">
+
+<div
+class="bar-fill red"
+style="width:${
+  s.total
+    ? ((s.nouveau + s.nontraite) / s.total) * 100
+    : 0
+}%">
+</div>
+
+</div>
+
+</div>
+
+<div
+style="
+margin-top:25px;
+padding:15px;
+background:#f6f9fc;
+border-radius:10px;
+">
+
+<div
+style="
+font-size:12px;
+color:#718096;
+margin-bottom:6px;
+">
+
+État du service informatique
+
+</div>
+
+<div
+style="
+font-size:18px;
+font-weight:700;
+">
+
+${
+  s.nontraite > 0
+    ? "Des demandes nécessitent une attention"
+    : "Toutes les demandes sont prises en charge"
+}
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<div class="panel-header">
+
+<h2>
+Dernières demandes
+</h2>
+
+<a
+href="/requests"
+style="
+color:#087ee8;
+font-size:12px;
+">
+
+Voir toutes les demandes →
+
+</a>
+
+</div>
+
+${
+  recent.length
+
+  ? `
+
+<table class="recent">
+
+<thead>
+
+<tr>
+
+<th>
+RÉFÉRENCE
+</th>
+
+<th>
+DEMANDEUR
+</th>
+
+<th>
+SERVICE
+</th>
+
+<th>
+DEMANDE
+</th>
+
+<th>
+STATUT
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+${recent.map(r => `
+
+<tr>
+
+<td>
+
+<a
+href="/request?id=${encodeURIComponent(r.id)}"
+class="id">
+
+${escapeHtml(r.id)}
+
+</a>
+
+</td>
+
+<td>
+${escapeHtml(r.nom)}
+</td>
+
+<td>
+${escapeHtml(r.service)}
+</td>
+
+<td>
+${escapeHtml(r.sujet)}
+</td>
+
+<td>
+
+<span
+class="status ${statusClass(r.status)}">
+
+${escapeHtml(r.status)}
+
+</span>
+
+</td>
+
+</tr>
+
+`).join("")}
+
+</tbody>
+
+</table>
+
+`
+
+  : `<div class="empty">
+      Aucune demande enregistrée.
+     </div>`
+}
+
+</div>
+
+</section>
+
+`, "dashboard");
+}
+
+/* =========================================================
    CANAL DDI
-========================= */
+========================================================= */
 
 function canalPage() {
+
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Canal DDI</h1>
-          <p>Les demandes informatiques reçues par le service IT</p>
-        </div>
+<section class="content">
 
-        <a href="/new" class="btn">＋ Nouvelle demande</a>
-      </div>
+<div class="page-title">
 
-      <div class="request-list">
+<div>
 
-        ${
-          requests.length
-            ? requests.map(r => `
-              <a href="/request?id=${encodeURIComponent(r.id)}" class="request-card">
+<h1>
+Canal DDI
+</h1>
 
-                <div class="request-left">
+<p>
+Les demandes informatiques reçues par le service IT
+</p>
 
-                  <div class="request-avatar">
-                    ${escapeHtml(r.nom.charAt(0).toUpperCase())}
-                  </div>
+</div>
 
-                  <div>
-                    <div class="request-name">
-                      ${escapeHtml(r.nom)}
-                    </div>
+<a href="/new" class="btn">
+＋ Nouvelle demande
+</a>
 
-                    <div class="request-meta">
-                      ${escapeHtml(r.service)} · ${escapeHtml(r.date)}
-                    </div>
+</div>
 
-                    <div class="request-subject">
-                      ${escapeHtml(r.sujet)}
-                    </div>
-                  </div>
+<div class="request-list">
 
-                </div>
+${
+  requests.length
 
-                <div class="request-right">
+  ? requests.map(r => `
 
-                  <span class="status ${statusClass(r.status)}">
-                    ${escapeHtml(r.status)}
-                  </span>
+<a
+href="/request?id=${encodeURIComponent(r.id)}"
+class="request-card">
 
-                  <div style="font-size:10px;color:#9aa4b2;margin-top:7px;">
-                    ${escapeHtml(r.id)}
-                  </div>
+<div class="request-left">
 
-                </div>
+<div class="request-avatar">
 
-              </a>
-            `).join("")
-            : `<div class="empty">Aucune demande.</div>`
-        }
+${escapeHtml(
+  r.nom.charAt(0).toUpperCase()
+)}
 
-      </div>
+</div>
 
-    </section>
-  `, "canal");
+<div>
+
+<div class="request-name">
+
+${escapeHtml(r.nom)}
+
+</div>
+
+<div class="request-meta">
+
+${escapeHtml(r.service)}
+·
+${escapeHtml(r.date)}
+
+</div>
+
+<div class="request-subject">
+
+${escapeHtml(r.sujet)}
+
+</div>
+
+</div>
+
+</div>
+
+<div class="request-right">
+
+<span
+class="status ${statusClass(r.status)}">
+
+${escapeHtml(r.status)}
+
+</span>
+
+<div
+style="
+font-size:10px;
+color:#9aa4b2;
+margin-top:7px;
+">
+
+${escapeHtml(r.id)}
+
+</div>
+
+</div>
+
+</a>
+
+`).join("")
+
+  : `<div class="empty">
+      Aucune demande.
+     </div>`
 }
 
-/* =========================
+</div>
+
+</section>
+
+`, "canal");
+}
+
+/* =========================================================
    TOUTES LES DEMANDES
-========================= */
+========================================================= */
 
 function requestsPage() {
+
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Toutes les demandes</h1>
-          <p>Historique complet des demandes informatiques</p>
-        </div>
-      </div>
+<section class="content">
 
-      <div class="panel">
+<div class="page-title">
 
-        ${
-          requests.length
-            ? `
-              <table class="recent">
+<div>
 
-                <thead>
-                  <tr>
-                    <th>RÉFÉRENCE</th>
-                    <th>DEMANDEUR</th>
-                    <th>SERVICE</th>
-                    <th>DEMANDE</th>
-                    <th>DATE</th>
-                    <th>STATUT</th>
-                  </tr>
-                </thead>
+<h1>
+Toutes les demandes
+</h1>
 
-                <tbody>
+<p>
+Historique complet des demandes informatiques
+</p>
 
-                  ${requests.map(r => `
-                    <tr>
+</div>
 
-                      <td>
-                        <a href="/request?id=${encodeURIComponent(r.id)}" class="id">
-                          ${escapeHtml(r.id)}
-                        </a>
-                      </td>
+</div>
 
-                      <td>${escapeHtml(r.nom)}</td>
-                      <td>${escapeHtml(r.service)}</td>
-                      <td>${escapeHtml(r.sujet)}</td>
-                      <td>${escapeHtml(r.date)}</td>
+<div class="panel">
 
-                      <td>
-                        <span class="status ${statusClass(r.status)}">
-                          ${escapeHtml(r.status)}
-                        </span>
-                      </td>
+${
+  requests.length
 
-                    </tr>
-                  `).join("")}
+  ? `
 
-                </tbody>
+<table class="recent">
 
-              </table>
-            `
-            : `<div class="empty">Aucune demande enregistrée.</div>`
-        }
+<thead>
 
-      </div>
+<tr>
 
-    </section>
-  `, "requests");
+<th>
+RÉFÉRENCE
+</th>
+
+<th>
+DEMANDEUR
+</th>
+
+<th>
+SERVICE
+</th>
+
+<th>
+DEMANDE
+</th>
+
+<th>
+DATE
+</th>
+
+<th>
+STATUT
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+${requests.map(r => `
+
+<tr>
+
+<td>
+
+<a
+href="/request?id=${encodeURIComponent(r.id)}"
+class="id">
+
+${escapeHtml(r.id)}
+
+</a>
+
+</td>
+
+<td>
+${escapeHtml(r.nom)}
+</td>
+
+<td>
+${escapeHtml(r.service)}
+</td>
+
+<td>
+${escapeHtml(r.sujet)}
+</td>
+
+<td>
+${escapeHtml(r.date)}
+</td>
+
+<td>
+
+<span
+class="status ${statusClass(r.status)}">
+
+${escapeHtml(r.status)}
+
+</span>
+
+</td>
+
+</tr>
+
+`).join("")}
+
+</tbody>
+
+</table>
+
+`
+
+  : `<div class="empty">
+      Aucune demande enregistrée.
+     </div>`
 }
 
-/* =========================
+</div>
+
+</section>
+
+`, "requests");
+}
+
+/* =========================================================
    NOUVELLE DEMANDE
-========================= */
+========================================================= */
 
 function newPage() {
+
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Nouvelle demande</h1>
-          <p>Enregistrer une nouvelle demande informatique</p>
-        </div>
-      </div>
+<section class="content">
 
-      <div class="form-box">
+<div class="page-title">
 
-        <form method="POST" action="/new">
+<div>
 
-          <div class="form-group">
-            <label>Nom du demandeur</label>
-            <input
-              type="text"
-              name="nom"
-              placeholder="Ex : Mamadou"
-              required>
-          </div>
+<h1>
+Nouvelle demande
+</h1>
 
-          <div class="form-group">
-            <label>Service</label>
+<p>
+Enregistrer une nouvelle demande informatique
+</p>
 
-            <select name="service" required>
-              <option value="">Choisir le service</option>
-              <option>Direction</option>
-              <option>Ressources Humaines</option>
-              <option>Comptabilité</option>
-              <option>Commercial</option>
-              <option>Administration</option>
-              <option>Autre</option>
-            </select>
-          </div>
+</div>
 
-          <div class="form-group">
-            <label>Objet de la demande</label>
+</div>
 
-            <input
-              type="text"
-              name="sujet"
-              placeholder="Ex : Ordinateur en panne"
-              required>
-          </div>
+<div class="form-box">
 
-          <div class="form-group">
-            <label>Description</label>
+<form method="POST" action="/new">
 
-            <textarea
-              name="description"
-              placeholder="Décrivez le problème rencontré..."
-              required></textarea>
-          </div>
+<div class="form-group">
 
-          <button class="btn" type="submit">
-            Envoyer la demande
-          </button>
+<label>
+Nom du demandeur
+</label>
 
-        </form>
+<input
+type="text"
+name="nom"
+placeholder="Ex : Mamadou"
+required>
 
-      </div>
+</div>
 
-    </section>
-  `, "new");
+<div class="form-group">
+
+<label>
+Service
+</label>
+
+<select
+name="service"
+required>
+
+<option value="">
+Choisir le service
+</option>
+
+<option>
+Direction
+</option>
+
+<option>
+Ressources Humaines
+</option>
+
+<option>
+Comptabilité
+</option>
+
+<option>
+Commercial
+</option>
+
+<option>
+Administration
+</option>
+
+<option>
+Autre
+</option>
+
+</select>
+
+</div>
+
+<div class="form-group">
+
+<label>
+Objet de la demande
+</label>
+
+<input
+type="text"
+name="sujet"
+placeholder="Ex : Ordinateur en panne"
+required>
+
+</div>
+
+<div class="form-group">
+
+<label>
+Description
+</label>
+
+<textarea
+name="description"
+placeholder="Décrivez le problème rencontré..."
+required></textarea>
+
+</div>
+
+<button
+class="btn"
+type="submit">
+
+Envoyer la demande
+
+</button>
+
+</form>
+
+</div>
+
+</section>
+
+`, "new");
 }
 
-/* =========================
+/* =========================================================
    CONVERSATION
-========================= */
+========================================================= */
 
 function requestPage(id) {
-  const request = requests.find(r => r.id === id);
+
+  const request =
+    requests.find(r => r.id === id);
 
   if (!request) {
+
     return layout(`
-      <section class="content">
-        <div class="empty">
-          <h2>Demande introuvable</h2>
-          <br>
-          <a href="/canal" class="btn">Retour au canal</a>
-        </div>
-      </section>
-    `, "canal");
+
+<section class="content">
+
+<div class="empty">
+
+<h2>
+Demande introuvable
+</h2>
+
+<br>
+
+<a
+href="/canal"
+class="btn">
+
+Retour au canal
+
+</a>
+
+</div>
+
+</section>
+
+`, "canal");
+
   }
 
   return layout(`
-    <section class="content">
 
-      <a href="/canal" class="back">
-        ← Retour au Canal DDI
-      </a>
+<section class="content">
 
-      <div class="conversation">
+<a
+href="/canal"
+class="back">
 
-        <div class="conversation-header">
+← Retour au Canal DDI
 
-          <div class="conversation-title">
-            <strong>${escapeHtml(request.sujet)}</strong>
+</a>
 
-            <span>
-              ${escapeHtml(request.id)} ·
-              ${escapeHtml(request.nom)} ·
-              ${escapeHtml(request.service)}
-            </span>
-          </div>
+<div class="conversation">
 
-          <span class="status ${statusClass(request.status)}">
-            ${escapeHtml(request.status)}
-          </span>
+<div class="conversation-header">
 
-        </div>
+<div class="conversation-title">
 
-        <div class="messages">
+<strong>
+${escapeHtml(request.sujet)}
+</strong>
 
-          ${
-            request.messages && request.messages.length
-              ? request.messages.map(m => `
-                  <div class="message ${m.auteur === "Service Informatique" ? "me" : ""}">
+<span>
 
-                    <div class="message-author">
-                      ${escapeHtml(m.auteur)}
-                    </div>
+${escapeHtml(request.id)}
+·
+${escapeHtml(request.nom)}
+·
+${escapeHtml(request.service)}
 
-                    <div class="message-text">
-                      ${escapeHtml(m.texte)}
-                    </div>
+</span>
 
-                    <div class="message-date">
-                      ${escapeHtml(m.date)}
-                    </div>
+</div>
 
-                  </div>
-                `).join("")
-              : `
-                <div class="empty">
-                  Aucun message.
-                </div>
-              `
-          }
+<span
+class="status ${statusClass(request.status)}">
 
-        </div>
+${escapeHtml(request.status)}
 
-        <div class="status-actions">
+</span>
 
-          <span>Changer le statut :</span>
+</div>
 
-          <form method="POST" action="/status">
-            <input type="hidden" name="id" value="${escapeHtml(request.id)}">
-            <input type="hidden" name="status" value="Nouveau">
-            <button class="status-btn">🆕 Nouveau</button>
-          </form>
+<div class="messages">
 
-          <form method="POST" action="/status">
-            <input type="hidden" name="id" value="${escapeHtml(request.id)}">
-            <input type="hidden" name="status" value="En cours">
-            <button class="status-btn">🔵 En cours</button>
-          </form>
+${
+  request.messages &&
+  request.messages.length
 
-          <form method="POST" action="/status">
-            <input type="hidden" name="id" value="${escapeHtml(request.id)}">
-            <input type="hidden" name="status" value="Terminé">
-            <button class="status-btn">🟢 Terminé</button>
-          </form>
+  ? request.messages.map(m => `
 
-          <form method="POST" action="/status">
-            <input type="hidden" name="id" value="${escapeHtml(request.id)}">
-            <input type="hidden" name="status" value="Non traité">
-            <button class="status-btn">🔴 Non traité</button>
-          </form>
+<div
+class="message ${
+  m.auteur === "Service Informatique"
+    ? "me"
+    : ""
+}">
 
-        </div>
+<div class="message-author">
 
-        <form method="POST" action="/message" class="message-form">
+${escapeHtml(m.auteur)}
 
-          <input
-            type="hidden"
-            name="id"
-            value="${escapeHtml(request.id)}">
+</div>
 
-          <input
-            type="text"
-            name="message"
-            placeholder="Écrire un message..."
-            required>
+<div class="message-text">
 
-          <button class="btn" type="submit">
-            Envoyer
-          </button>
+${escapeHtml(m.texte)}
 
-        </form>
+</div>
 
-      </div>
+<div class="message-date">
 
-    </section>
-  `, "canal");
+${escapeHtml(m.date)}
+
+</div>
+
+</div>
+
+`).join("")
+
+  : `<div class="empty">
+      Aucun message.
+     </div>`
 }
 
-/* =========================
+</div>
+
+<div class="status-actions">
+
+<span>
+Changer le statut :
+</span>
+
+<form method="POST" action="/status">
+
+<input
+type="hidden"
+name="id"
+value="${escapeHtml(request.id)}">
+
+<input
+type="hidden"
+name="status"
+value="Nouveau">
+
+<button
+class="status-btn">
+
+🆕 Nouveau
+
+</button>
+
+</form>
+
+<form method="POST" action="/status">
+
+<input
+type="hidden"
+name="id"
+value="${escapeHtml(request.id)}">
+
+<input
+type="hidden"
+name="status"
+value="En cours">
+
+<button
+class="status-btn">
+
+🔵 En cours
+
+</button>
+
+</form>
+
+<form method="POST" action="/status">
+
+<input
+type="hidden"
+name="id"
+value="${escapeHtml(request.id)}">
+
+<input
+type="hidden"
+name="status"
+value="Terminé">
+
+<button
+class="status-btn">
+
+🟢 Terminé
+
+</button>
+
+</form>
+
+<form method="POST" action="/status">
+
+<input
+type="hidden"
+name="id"
+value="${escapeHtml(request.id)}">
+
+<input
+type="hidden"
+name="status"
+value="Non traité">
+
+<button
+class="status-btn">
+
+🔴 Non traité
+
+</button>
+
+</form>
+
+</div>
+
+<form
+method="POST"
+action="/message"
+class="message-form">
+
+<input
+type="hidden"
+name="id"
+value="${escapeHtml(request.id)}">
+
+<input
+type="text"
+name="message"
+placeholder="Écrire un message..."
+required>
+
+<button
+class="btn"
+type="submit">
+
+Envoyer
+
+</button>
+
+</form>
+
+</div>
+
+</section>
+
+`, "canal");
+}
+
+/* =========================================================
    NOTIFICATIONS
-========================= */
+========================================================= */
 
 function notificationsPage() {
-  const pending = requests.filter(
-    r => r.status === "Nouveau" || r.status === "Non traité"
-  );
+
+  const pending =
+    requests.filter(
+      r =>
+        r.status === "Nouveau" ||
+        r.status === "Non traité"
+    );
 
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Notifications</h1>
-          <p>Demandes nécessitant une attention</p>
-        </div>
-      </div>
+<section class="content">
 
-      <div class="panel">
+<div class="page-title">
 
-        ${
-          pending.length
-            ? pending.map(r => `
-                <a
-                  href="/request?id=${encodeURIComponent(r.id)}"
-                  style="
-                    display:flex;
-                    justify-content:space-between;
-                    align-items:center;
-                    padding:18px;
-                    border-bottom:1px solid #edf1f5;
-                  "
-                >
+<div>
 
-                  <div>
-                    <strong>${escapeHtml(r.id)}</strong>
-                    <div style="font-size:12px;color:#718096;margin-top:5px;">
-                      ${escapeHtml(r.nom)} · ${escapeHtml(r.sujet)}
-                    </div>
-                  </div>
+<h1>
+Notifications
+</h1>
 
-                  <span class="status ${statusClass(r.status)}">
-                    ${escapeHtml(r.status)}
-                  </span>
+<p>
+Demandes nécessitant une attention
+</p>
 
-                </a>
-              `).join("")
-            : `<div class="empty">Aucune notification.</div>`
-        }
+</div>
 
-      </div>
+</div>
 
-    </section>
-  `, "notifications");
+<div class="panel">
+
+${
+  pending.length
+
+  ? pending.map(r => `
+
+<a
+href="/request?id=${encodeURIComponent(r.id)}"
+style="
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:18px;
+border-bottom:1px solid #edf1f5;
+">
+
+<div>
+
+<strong>
+${escapeHtml(r.id)}
+</strong>
+
+<div
+style="
+font-size:12px;
+color:#718096;
+margin-top:5px;
+">
+
+${escapeHtml(r.nom)}
+·
+${escapeHtml(r.sujet)}
+
+</div>
+
+</div>
+
+<span
+class="status ${statusClass(r.status)}">
+
+${escapeHtml(r.status)}
+
+</span>
+
+</a>
+
+`).join("")
+
+  : `<div class="empty">
+      Aucune notification.
+     </div>`
 }
 
-/* =========================
+</div>
+
+</section>
+
+`, "notifications");
+}
+
+/* =========================================================
    UTILISATEURS
-========================= */
+========================================================= */
 
 function usersPage() {
-  const users = [
-    ["Service Informatique", "IT", "Administrateur"],
-    ["Direction", "Direction", "Consultation"],
-    ["Ressources Humaines", "RH", "Consultation"]
-  ];
 
   return layout(`
-    <section class="content">
 
-      <div class="page-title">
-        <div>
-          <h1>Utilisateurs</h1>
-          <p>Gestion des accès à DDI HELPDESK</p>
-        </div>
-      </div>
+<section class="content">
 
-      <div class="panel">
+<div class="page-title">
 
-        <table class="recent">
+<div>
 
-          <thead>
-            <tr>
-              <th>UTILISATEUR</th>
-              <th>SERVICE</th>
-              <th>RÔLE</th>
-            </tr>
-          </thead>
+<h1>
+Utilisateurs
+</h1>
 
-          <tbody>
+<p>
+Gestion des accès à DDI HELPDESK
+</p>
 
-            ${users.map(u => `
-              <tr>
-                <td>${escapeHtml(u[0])}</td>
-                <td>${escapeHtml(u[1])}</td>
-                <td>${escapeHtml(u[2])}</td>
-              </tr>
-            `).join("")}
+</div>
 
-          </tbody>
+</div>
 
-        </table>
+<div class="panel">
 
-      </div>
+<table class="recent">
 
-    </section>
-  `, "users");
+<thead>
+
+<tr>
+
+<th>
+UTILISATEUR
+</th>
+
+<th>
+IDENTIFIANT
+</th>
+
+<th>
+SERVICE
+</th>
+
+<th>
+RÔLE
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+${users.map(u => `
+
+<tr>
+
+<td>
+${escapeHtml(u.nom)}
+</td>
+
+<td>
+${escapeHtml(u.username)}
+</td>
+
+<td>
+${escapeHtml(u.service)}
+</td>
+
+<td>
+${escapeHtml(u.role)}
+</td>
+
+</tr>
+
+`).join("")}
+
+</tbody>
+
+</table>
+
+</div>
+
+</section>
+
+`, "users");
 }
 
-/* =========================
-   ROUTES
-========================= */
+/* =========================================================
+   CONNEXION
+========================================================= */
 
-app.get("/", (req, res) => {
+app.get("/login", (req, res) => {
+
+  if (req.session.user) {
+    return res.redirect("/");
+  }
+
+  res.send(loginPage());
+
+});
+
+app.post("/login", (req, res) => {
+
+  const username =
+    String(req.body.username || "").trim();
+
+  const password =
+    String(req.body.password || "");
+
+  const user =
+    users.find(
+      u =>
+        u.username === username &&
+        u.password === password
+    );
+
+  if (!user) {
+    return res.send(
+      loginPage(
+        "Nom d'utilisateur ou mot de passe incorrect."
+      )
+    );
+  }
+
+  req.session.user = {
+    id: user.id,
+    nom: user.nom,
+    username: user.username,
+    role: user.role,
+    service: user.service
+  };
+
+  res.redirect("/");
+
+});
+
+/* =========================================================
+   DÉCONNEXION
+========================================================= */
+
+app.get("/logout", (req, res) => {
+
+  req.session.destroy(() => {
+    res.redirect("/login");
+  });
+
+});
+
+/* =========================================================
+   ROUTES PROTÉGÉES
+========================================================= */
+
+app.get("/", requireLogin, (req, res) => {
   res.send(dashboardPage());
 });
 
-app.get("/canal", (req, res) => {
+app.get("/canal", requireLogin, (req, res) => {
   res.send(canalPage());
 });
 
-app.get("/requests", (req, res) => {
+app.get("/requests", requireLogin, (req, res) => {
   res.send(requestsPage());
 });
 
-app.get("/new", (req, res) => {
+app.get("/new", requireLogin, (req, res) => {
   res.send(newPage());
 });
 
-app.get("/request", (req, res) => {
+app.get("/request", requireLogin, (req, res) => {
   res.send(requestPage(req.query.id));
 });
 
-app.get("/notifications", (req, res) => {
+app.get("/notifications", requireLogin, (req, res) => {
   res.send(notificationsPage());
 });
 
-app.get("/users", (req, res) => {
+app.get("/users", requireLogin, (req, res) => {
   res.send(usersPage());
 });
 
-/* =========================
+/* =========================================================
    CRÉER UNE DEMANDE
-========================= */
+========================================================= */
 
-app.post("/new", (req, res) => {
-  const { nom, service, sujet, description } = req.body;
+app.post("/new", requireLogin, (req, res) => {
+
+  const {
+    nom,
+    service,
+    sujet,
+    description
+  } = req.body;
 
   const request = {
-    id: `DDI-${String(nextId).padStart(4, "0")}`,
-    nom: nom || "Inconnu",
-    service: service || "Non précisé",
-    sujet: sujet || "Sans objet",
-    description: description || "",
-    status: "Nouveau",
-    date: new Date().toLocaleDateString("fr-FR"),
+
+    id:
+      `DDI-${String(nextId).padStart(4, "0")}`,
+
+    nom:
+      nom || "Inconnu",
+
+    service:
+      service || "Non précisé",
+
+    sujet:
+      sujet || "Sans objet",
+
+    description:
+      description || "",
+
+    status:
+      "Nouveau",
+
+    date:
+      new Date().toLocaleDateString("fr-FR"),
+
     messages: [
+
       {
-        auteur: nom || "Inconnu",
-        texte: description || sujet || "",
-        date: new Date().toLocaleString("fr-FR")
+        auteur:
+          nom || "Inconnu",
+
+        texte:
+          description || sujet || "",
+
+        date:
+          new Date().toLocaleString("fr-FR")
       }
+
     ]
+
   };
 
   requests.unshift(request);
+
   nextId++;
 
-  res.redirect(`/request?id=${encodeURIComponent(request.id)}`);
+  res.redirect(
+    `/request?id=${encodeURIComponent(request.id)}`
+  );
+
 });
 
-/* =========================
+/* =========================================================
    CHANGER LE STATUT
-========================= */
+========================================================= */
 
-app.post("/status", (req, res) => {
-  const { id, status } = req.body;
+app.post("/status", requireLogin, (req, res) => {
 
-  const request = requests.find(r => r.id === id);
+  const {
+    id,
+    status
+  } = req.body;
+
+  const request =
+    requests.find(r => r.id === id);
 
   if (request) {
+
     request.status = status;
 
     request.messages.push({
-      auteur: "Service Informatique",
-      texte: `Statut de la demande changé en : ${status}`,
-      date: new Date().toLocaleString("fr-FR")
+
+      auteur:
+        "Service Informatique",
+
+      texte:
+        `Statut de la demande changé en : ${status}`,
+
+      date:
+        new Date().toLocaleString("fr-FR")
+
     });
+
   }
 
-  res.redirect(`/request?id=${encodeURIComponent(id)}`);
+  res.redirect(
+    `/request?id=${encodeURIComponent(id)}`
+  );
+
 });
 
-/* =========================
+/* =========================================================
    MESSAGE
-========================= */
+========================================================= */
 
-app.post("/message", (req, res) => {
-  const { id, message } = req.body;
+app.post("/message", requireLogin, (req, res) => {
 
-  const request = requests.find(r => r.id === id);
+  const {
+    id,
+    message
+  } = req.body;
+
+  const request =
+    requests.find(r => r.id === id);
 
   if (request && message) {
+
     request.messages.push({
-      auteur: "Service Informatique",
-      texte: message,
-      date: new Date().toLocaleString("fr-FR")
+
+      auteur:
+        "Service Informatique",
+
+      texte:
+        message,
+
+      date:
+        new Date().toLocaleString("fr-FR")
+
     });
+
   }
 
-  res.redirect(`/request?id=${encodeURIComponent(id)}`);
+  res.redirect(
+    `/request?id=${encodeURIComponent(id)}`
+  );
+
 });
 
-/* =========================
+/* =========================================================
    SERVEUR
-========================= */
+========================================================= */
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+  process.env.PORT || 3000;
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`DDI HELPDESK lancé sur le port ${PORT}`);
-});
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `DDI HELPDESK lancé sur le port ${PORT}`
+    );
+  }
+);
