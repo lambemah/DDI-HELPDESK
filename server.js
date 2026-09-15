@@ -1,14 +1,30 @@
 const express = require("express");
 const session = require("express-session");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+/* =========================================================
+   SUPABASE
+========================================================= */
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SECRET_KEY
+);
+
+/* =========================================================
+   SESSION
+========================================================= */
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "DDI-HELPDESK-SECRET-2026",
+    secret:
+      process.env.SESSION_SECRET ||
+      "DDI-HELPDESK-SECRET-2026",
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -17,120 +33,6 @@ app.use(
     }
   })
 );
-
-/* =========================================================
-   UTILISATEURS
-========================================================= */
-
-const users = [
-  {
-    id: 1,
-    nom: "Administrateur DDI",
-    username: "admin",
-    password: "1234",
-    role: "Administrateur",
-    service: "Service Informatique"
-  },
-  {
-    id: 2,
-    nom: "Direction",
-    username: "direction",
-    password: "1234",
-    role: "Direction",
-    service: "Direction"
-  },
-  {
-    id: 3,
-    nom: "Ressources Humaines",
-    username: "rh",
-    password: "1234",
-    role: "RH",
-    service: "Ressources Humaines"
-  }
-];
-
-/* =========================================================
-   DEMANDES
-========================================================= */
-
-let requests = [
-  {
-    id: "DDI-0025",
-    nom: "Mamadou",
-    service: "Comptabilité",
-    sujet: "Ordinateur ne démarre plus",
-    description: "Mon ordinateur ne démarre plus depuis ce matin.",
-    status: "En cours",
-    date: "08/09/2026",
-    messages: [
-      {
-        auteur: "Mamadou",
-        texte: "Mon ordinateur ne démarre plus depuis ce matin.",
-        date: "08/09/2026 08:15"
-      },
-      {
-        auteur: "Service Informatique",
-        texte: "Nous avons pris votre demande en charge.",
-        date: "08/09/2026 08:30"
-      }
-    ]
-  },
-  {
-    id: "DDI-0024",
-    nom: "Fanta",
-    service: "RH",
-    sujet: "Imprimante en panne",
-    description: "L'imprimante du service RH ne fonctionne plus.",
-    status: "Nouveau",
-    date: "08/09/2026",
-    messages: [
-      {
-        auteur: "Fanta",
-        texte: "L'imprimante du service RH ne fonctionne plus.",
-        date: "08/09/2026 09:10"
-      }
-    ]
-  },
-  {
-    id: "DDI-0023",
-    nom: "Aïssata",
-    service: "Direction",
-    sujet: "Problème de connexion Internet",
-    description: "La connexion Internet est très lente.",
-    status: "Terminé",
-    date: "07/09/2026",
-    messages: [
-      {
-        auteur: "Aïssata",
-        texte: "La connexion Internet est très lente.",
-        date: "07/09/2026 10:20"
-      },
-      {
-        auteur: "Service Informatique",
-        texte: "Le problème a été résolu.",
-        date: "07/09/2026 11:05"
-      }
-    ]
-  },
-  {
-    id: "DDI-0022",
-    nom: "Paul",
-    service: "Commercial",
-    sujet: "Problème de messagerie",
-    description: "Je n'arrive pas à accéder à ma messagerie.",
-    status: "Non traité",
-    date: "06/09/2026",
-    messages: [
-      {
-        auteur: "Paul",
-        texte: "Je n'arrive pas à accéder à ma messagerie.",
-        date: "06/09/2026 14:00"
-      }
-    ]
-  }
-];
-
-let nextId = 26;
 
 /* =========================================================
    OUTILS
@@ -152,14 +54,22 @@ function statusClass(status) {
   return "notdone";
 }
 
-function stats() {
-  return {
-    total: requests.length,
-    nouveau: requests.filter(r => r.status === "Nouveau").length,
-    cours: requests.filter(r => r.status === "En cours").length,
-    termine: requests.filter(r => r.status === "Terminé").length,
-    nontraite: requests.filter(r => r.status === "Non traité").length
-  };
+function formatDate(date) {
+  if (!date) return "";
+
+  return new Date(date).toLocaleDateString("fr-FR");
+}
+
+function formatDateTime(date) {
+  if (!date) return "";
+
+  return new Date(date).toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function requireLogin(req, res, next) {
@@ -171,6 +81,100 @@ function requireLogin(req, res, next) {
 }
 
 /* =========================================================
+   RÉCUPÉRER LES DEMANDES
+========================================================= */
+
+async function getRequests() {
+  const { data, error } = await supabase
+    .from("demandes")
+    .select("*")
+    .order("date_creation", {
+      ascending: false
+    });
+
+  if (error) {
+    console.error("Erreur demandes :", error);
+    throw error;
+  }
+
+  const requests = data || [];
+
+  for (const request of requests) {
+    const { data: messages, error: messageError } =
+      await supabase
+        .from("messages")
+        .select("*")
+        .eq("demande_id", request.id)
+        .order("date_creation", {
+          ascending: true
+        });
+
+    if (messageError) {
+      console.error(
+        "Erreur messages :",
+        messageError
+      );
+
+      request.messages = [];
+    } else {
+      request.messages = (messages || []).map(
+        message => ({
+          auteur: message.auteur,
+          texte: message.message,
+          date: formatDateTime(
+            message.date_creation
+          )
+        })
+      );
+    }
+
+    request.status = request.statut;
+    request.date = formatDate(
+      request.date_creation
+    );
+  }
+
+  return requests;
+}
+
+/* =========================================================
+   STATISTIQUES
+========================================================= */
+
+async function stats() {
+  const { data, error } = await supabase
+    .from("demandes")
+    .select("statut");
+
+  if (error) {
+    console.error("Erreur statistiques :", error);
+    throw error;
+  }
+
+  const requests = data || [];
+
+  return {
+    total: requests.length,
+
+    nouveau: requests.filter(
+      r => r.statut === "Nouveau"
+    ).length,
+
+    cours: requests.filter(
+      r => r.statut === "En cours"
+    ).length,
+
+    termine: requests.filter(
+      r => r.statut === "Terminé"
+    ).length,
+
+    nontraite: requests.filter(
+      r => r.statut === "Non traité"
+    ).length
+  };
+}
+
+/* =========================================================
    PAGE DE CONNEXION
 ========================================================= */
 
@@ -178,13 +182,18 @@ function loginPage(error = "") {
   return `
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
 
 <title>Connexion - DDI HELPDESK</title>
 
 <style>
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -293,64 +302,75 @@ button:hover {
   margin-top: 24px;
 }
 
-@media(max-width:500px) {
-  .login-box {
-    padding: 28px 22px;
-  }
-}
 </style>
+
 </head>
 
 <body>
 
 <div class="login-box">
 
-  <div class="logo">D</div>
+<div class="logo">D</div>
 
-  <h1>Bienvenue sur DDI HELPDESK</h1>
+<h1>
+Bienvenue sur DDI HELPDESK
+</h1>
 
-  <p class="subtitle">
-    Connectez-vous pour accéder au suivi des demandes informatiques.
-  </p>
+<p class="subtitle">
+Connectez-vous pour accéder au suivi des demandes informatiques.
+</p>
 
-  ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
+${
+  error
+    ? `<div class="error">${escapeHtml(error)}</div>`
+    : ""
+}
 
-  <form method="POST" action="/login">
+<form method="POST" action="/login">
 
-    <div class="form-group">
-      <label>Nom d'utilisateur</label>
+<div class="form-group">
 
-      <input
-        type="text"
-        name="username"
-        placeholder="Votre nom d'utilisateur"
-        required
-        autofocus>
-    </div>
+<label>
+Nom d'utilisateur
+</label>
 
-    <div class="form-group">
-      <label>Mot de passe</label>
+<input
+type="text"
+name="username"
+placeholder="Votre nom d'utilisateur"
+required
+autofocus>
 
-      <input
-        type="password"
-        name="password"
-        placeholder="Votre mot de passe"
-        required>
-    </div>
+</div>
 
-    <button type="submit">
-      Se connecter
-    </button>
+<div class="form-group">
 
-  </form>
+<label>
+Mot de passe
+</label>
 
-  <div class="footer">
-    DDI HELPDESK · Service Informatique
-  </div>
+<input
+type="password"
+name="password"
+placeholder="Votre mot de passe"
+required>
+
+</div>
+
+<button type="submit">
+Se connecter
+</button>
+
+</form>
+
+<div class="footer">
+DDI HELPDESK · Service Informatique
+</div>
 
 </div>
 
 </body>
+
 </html>
 `;
 }
@@ -360,71 +380,134 @@ button:hover {
 ========================================================= */
 
 function sidebar(active = "dashboard") {
+
   return `
-    <aside class="sidebar">
+<aside class="sidebar">
 
-      <div class="brand">
+<div class="brand">
 
-        <div class="brand-icon">D</div>
+<div class="brand-icon">
+D
+</div>
 
-        <div>
-          <strong>DDI</strong>
-          <span>HELPDESK</span>
-        </div>
+<div>
 
-      </div>
+<strong>DDI</strong>
 
-      <div class="menu-title">MENU</div>
+<span>
+HELPDESK
+</span>
 
-      <a href="/" class="menu-item ${active === "dashboard" ? "active" : ""}">
-        <span>▦</span>
-        <span>Tableau de bord</span>
-      </a>
+</div>
 
-      <a href="/canal" class="menu-item ${active === "canal" ? "active" : ""}">
-        <span>💬</span>
-        <span>Canal DDI</span>
-      </a>
+</div>
 
-      <a href="/new" class="menu-item ${active === "new" ? "active" : ""}">
-        <span>＋</span>
-        <span>Nouvelle demande</span>
-      </a>
+<div class="menu-title">
+MENU
+</div>
 
-      <a href="/requests" class="menu-item ${active === "requests" ? "active" : ""}">
-        <span>☷</span>
-        <span>Toutes les demandes</span>
-      </a>
+<a
+href="/"
+class="menu-item ${
+  active === "dashboard"
+    ? "active"
+    : ""
+}">
 
-      <a href="/notifications" class="menu-item ${active === "notifications" ? "active" : ""}">
-        <span>♢</span>
-        <span>Notifications</span>
-      </a>
+<span>▦</span>
+<span>Tableau de bord</span>
 
-      <a href="/users" class="menu-item ${active === "users" ? "active" : ""}">
-        <span>♙</span>
-        <span>Utilisateurs</span>
-      </a>
+</a>
 
-      <div class="sidebar-bottom">
+<a
+href="/canal"
+class="menu-item ${
+  active === "canal"
+    ? "active"
+    : ""
+}">
 
-        <div class="online">
-          <span class="online-dot"></span>
-          ${escapeHtml(activeUserName())}
-        </div>
+<span>💬</span>
+<span>Canal DDI</span>
 
-        <a href="/logout" class="logout">
-          ⇥ Déconnexion
-        </a>
+</a>
 
-      </div>
+<a
+href="/new"
+class="menu-item ${
+  active === "new"
+    ? "active"
+    : ""
+}">
 
-    </aside>
-  `;
-}
+<span>＋</span>
+<span>Nouvelle demande</span>
 
-function activeUserName() {
-  return "Service Informatique";
+</a>
+
+<a
+href="/requests"
+class="menu-item ${
+  active === "requests"
+    ? "active"
+    : ""
+}">
+
+<span>☷</span>
+<span>Toutes les demandes</span>
+
+</a>
+
+<a
+href="/notifications"
+class="menu-item ${
+  active === "notifications"
+    ? "active"
+    : ""
+}">
+
+<span>♢</span>
+<span>Notifications</span>
+
+</a>
+
+<a
+href="/users"
+class="menu-item ${
+  active === "users"
+    ? "active"
+    : ""
+}">
+
+<span>♙</span>
+<span>Utilisateurs</span>
+
+</a>
+
+<div class="sidebar-bottom">
+
+<div class="online">
+
+<span class="online-dot"></span>
+
+${escapeHtml(
+  "Service Informatique"
+)}
+
+</div>
+
+<a
+href="/logout"
+class="logout">
+
+⇥ Déconnexion
+
+</a>
+
+</div>
+
+</aside>
+`;
 }
 
 /* =========================================================
@@ -432,6 +515,15 @@ function activeUserName() {
 ========================================================= */
 
 function layout(content, active = "dashboard") {
+
+  const titles = {
+    dashboard: "Tableau de bord",
+    canal: "Canal DDI",
+    new: "Nouvelle demande",
+    requests: "Toutes les demandes",
+    notifications: "Notifications",
+    users: "Utilisateurs"
+  };
 
   return `
 <!DOCTYPE html>
@@ -441,7 +533,8 @@ function layout(content, active = "dashboard") {
 
 <meta charset="UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
 
 <title>DDI HELPDESK</title>
 
@@ -755,8 +848,6 @@ a {
   padding: 22px;
 }
 
-/* BARS */
-
 .bar-row {
   margin-bottom: 18px;
 }
@@ -797,8 +888,6 @@ a {
 .bar-fill.red {
   background: #dc3545;
 }
-
-/* CIRCLE */
 
 .resolution {
   display: flex;
@@ -877,8 +966,6 @@ a {
   color: #087ee8;
   font-weight: 700;
 }
-
-/* STATUS */
 
 .status {
   display: inline-block;
@@ -1229,32 +1316,27 @@ ${sidebar(active)}
 
 <header class="topbar">
 
-  <div class="topbar-title">
-    DDI HELPDESK /
-    <strong>
-      ${
-        active === "dashboard"
-          ? "Tableau de bord"
-          : active === "canal"
-          ? "Canal DDI"
-          : active === "new"
-          ? "Nouvelle demande"
-          : "Gestion"
-      }
-    </strong>
-  </div>
+<div class="topbar-title">
 
-  <div class="user">
+DDI HELPDESK /
 
-    <span>
-      Service Informatique
-    </span>
+<strong>
+${titles[active] || "Gestion"}
+</strong>
 
-    <div class="avatar">
-      IT
-    </div>
+</div>
 
-  </div>
+<div class="user">
+
+<span>
+Service Informatique
+</span>
+
+<div class="avatar">
+IT
+</div>
+
+</div>
 
 </header>
 
@@ -1274,23 +1356,32 @@ ${content}
    TABLEAU DE BORD
 ========================================================= */
 
-function dashboardPage() {
+async function dashboardPage() {
 
-  const s = stats();
+  const s = await stats();
 
   const resolutionRate =
     s.total === 0
       ? 0
-      : Math.round((s.termine / s.total) * 100);
+      : Math.round(
+          (s.termine / s.total) * 100
+        );
 
   const degree =
-    Math.round((resolutionRate / 100) * 360);
+    Math.round(
+      (resolutionRate / 100) * 360
+    );
+
+  const requests =
+    await getRequests();
 
   const services = {};
 
   requests.forEach(r => {
+
     services[r.service] =
       (services[r.service] || 0) + 1;
+
   });
 
   const serviceRows =
@@ -1300,7 +1391,9 @@ function dashboardPage() {
 
   const maxService =
     serviceRows.length
-      ? Math.max(...serviceRows.map(x => x[1]))
+      ? Math.max(
+          ...serviceRows.map(x => x[1])
+        )
       : 1;
 
   const recent =
@@ -1312,21 +1405,21 @@ function dashboardPage() {
 
 <div class="page-title">
 
-  <div>
+<div>
 
-    <h1>
-      Tableau de bord
-    </h1>
+<h1>
+Tableau de bord
+</h1>
 
-    <p>
-      Vue globale du suivi des demandes informatiques
-    </p>
+<p>
+Vue globale du suivi des demandes informatiques
+</p>
 
-  </div>
+</div>
 
-  <a href="/new" class="btn">
-    ＋ Nouvelle demande
-  </a>
+<a href="/new" class="btn">
+＋ Nouvelle demande
+</a>
 
 </div>
 
@@ -1334,81 +1427,81 @@ function dashboardPage() {
 
 <div class="stat-card">
 
-  <div class="stat-label">
-    TOTAL DES REQUÊTES
-  </div>
+<div class="stat-label">
+TOTAL DES REQUÊTES
+</div>
 
-  <div class="stat-number blue">
-    ${s.total}
-  </div>
+<div class="stat-number blue">
+${s.total}
+</div>
 
-  <div class="stat-sub">
-    Toutes les demandes
-  </div>
+<div class="stat-sub">
+Toutes les demandes
+</div>
 
 </div>
 
 <div class="stat-card">
 
-  <div class="stat-label">
-    NOUVELLES
-  </div>
+<div class="stat-label">
+NOUVELLES
+</div>
 
-  <div class="stat-number blue">
-    ${s.nouveau}
-  </div>
+<div class="stat-number blue">
+${s.nouveau}
+</div>
 
-  <div class="stat-sub">
-    À prendre en charge
-  </div>
+<div class="stat-sub">
+À prendre en charge
+</div>
 
 </div>
 
 <div class="stat-card">
 
-  <div class="stat-label">
-    EN COURS
-  </div>
+<div class="stat-label">
+EN COURS
+</div>
 
-  <div class="stat-number orange">
-    ${s.cours}
-  </div>
+<div class="stat-number orange">
+${s.cours}
+</div>
 
-  <div class="stat-sub">
-    Interventions en cours
-  </div>
+<div class="stat-sub">
+Interventions en cours
+</div>
 
 </div>
 
 <div class="stat-card">
 
-  <div class="stat-label">
-    TERMINÉES
-  </div>
+<div class="stat-label">
+TERMINÉES
+</div>
 
-  <div class="stat-number green">
-    ${s.termine}
-  </div>
+<div class="stat-number green">
+${s.termine}
+</div>
 
-  <div class="stat-sub">
-    Demandes résolues
-  </div>
+<div class="stat-sub">
+Demandes résolues
+</div>
 
 </div>
 
 <div class="stat-card">
 
-  <div class="stat-label">
-    NON TRAITÉES
-  </div>
+<div class="stat-label">
+NON TRAITÉES
+</div>
 
-  <div class="stat-number red">
-    ${s.nontraite}
-  </div>
+<div class="stat-number red">
+${s.nontraite}
+</div>
 
-  <div class="stat-sub">
-    En attente d'intervention
-  </div>
+<div class="stat-sub">
+En attente d'intervention
+</div>
 
 </div>
 
@@ -1432,16 +1525,25 @@ Suivi actuel
 
 <div class="panel-body">
 
+${[
+  ["🆕 Nouvelles", s.nouveau, ""],
+  ["🔵 En cours", s.cours, "orange"],
+  ["🟢 Terminées", s.termine, "green"],
+  ["🔴 Non traitées", s.nontraite, "red"]
+]
+.map(
+  ([label, count, color]) => `
+
 <div class="bar-row">
 
 <div class="bar-info">
 
 <span>
-🆕 Nouvelles
+${label}
 </span>
 
 <span>
-${s.nouveau}
+${count}
 </span>
 
 </div>
@@ -1449,88 +1551,21 @@ ${s.nouveau}
 <div class="bar">
 
 <div
-class="bar-fill"
-style="width:${s.total ? (s.nouveau / s.total) * 100 : 0}%">
+class="bar-fill ${color}"
+style="width:${
+  s.total
+    ? (count / s.total) * 100
+    : 0
+}%">
 </div>
 
 </div>
 
 </div>
 
-<div class="bar-row">
-
-<div class="bar-info">
-
-<span>
-🔵 En cours
-</span>
-
-<span>
-${s.cours}
-</span>
-
-</div>
-
-<div class="bar">
-
-<div
-class="bar-fill orange"
-style="width:${s.total ? (s.cours / s.total) * 100 : 0}%">
-</div>
-
-</div>
-
-</div>
-
-<div class="bar-row">
-
-<div class="bar-info">
-
-<span>
-🟢 Terminées
-</span>
-
-<span>
-${s.termine}
-</span>
-
-</div>
-
-<div class="bar">
-
-<div
-class="bar-fill green"
-style="width:${s.total ? (s.termine / s.total) * 100 : 0}%">
-</div>
-
-</div>
-
-</div>
-
-<div class="bar-row">
-
-<div class="bar-info">
-
-<span>
-🔴 Non traitées
-</span>
-
-<span>
-${s.nontraite}
-</span>
-
-</div>
-
-<div class="bar">
-
-<div
-class="bar-fill red"
-style="width:${s.total ? (s.nontraite / s.total) * 100 : 0}%">
-</div>
-
-</div>
-
-</div>
+`
+)
+.join("")}
 
 </div>
 
@@ -1596,8 +1631,9 @@ Services les plus concernés
 
 ${
   serviceRows.length
-
-  ? serviceRows.map(([service, count]) => `
+    ? serviceRows
+        .map(
+          ([service, count]) => `
 
 <div class="bar-row">
 
@@ -1617,18 +1653,21 @@ ${count}
 
 <div
 class="bar-fill"
-style="width:${(count / maxService) * 100}%">
+style="width:${
+  (count / maxService) * 100
+}%">
 </div>
 
 </div>
 
 </div>
 
-`).join("")
-
-  : `<div class="empty">
-      Aucune donnée disponible.
-     </div>`
+`
+        )
+        .join("")
+    : `<div class="empty">
+        Aucune donnée disponible.
+       </div>`
 }
 
 </div>
@@ -1773,8 +1812,7 @@ Voir toutes les demandes →
 
 ${
   recent.length
-
-  ? `
+    ? `
 
 <table class="recent">
 
@@ -1808,14 +1846,18 @@ STATUT
 
 <tbody>
 
-${recent.map(r => `
+${recent
+  .map(
+    r => `
 
 <tr>
 
 <td>
 
 <a
-href="/request?id=${encodeURIComponent(r.id)}"
+href="/request?id=${encodeURIComponent(
+      r.id
+    )}"
 class="id">
 
 ${escapeHtml(r.id)}
@@ -1839,7 +1881,9 @@ ${escapeHtml(r.sujet)}
 <td>
 
 <span
-class="status ${statusClass(r.status)}">
+class="status ${statusClass(
+      r.status
+    )}">
 
 ${escapeHtml(r.status)}
 
@@ -1849,17 +1893,18 @@ ${escapeHtml(r.status)}
 
 </tr>
 
-`).join("")}
+`
+  )
+  .join("")}
 
 </tbody>
 
 </table>
 
 `
-
-  : `<div class="empty">
-      Aucune demande enregistrée.
-     </div>`
+    : `<div class="empty">
+        Aucune demande enregistrée.
+       </div>`
 }
 
 </div>
@@ -1873,7 +1918,10 @@ ${escapeHtml(r.status)}
    CANAL DDI
 ========================================================= */
 
-function canalPage() {
+async function canalPage() {
+
+  const requests =
+    await getRequests();
 
   return layout(`
 
@@ -1903,11 +1951,14 @@ Les demandes informatiques reçues par le service IT
 
 ${
   requests.length
-
-  ? requests.map(r => `
+    ? requests
+        .map(
+          r => `
 
 <a
-href="/request?id=${encodeURIComponent(r.id)}"
+href="/request?id=${encodeURIComponent(
+            r.id
+          )}"
 class="request-card">
 
 <div class="request-left">
@@ -1949,7 +2000,9 @@ ${escapeHtml(r.sujet)}
 <div class="request-right">
 
 <span
-class="status ${statusClass(r.status)}">
+class="status ${statusClass(
+            r.status
+          )}">
 
 ${escapeHtml(r.status)}
 
@@ -1970,11 +2023,12 @@ ${escapeHtml(r.id)}
 
 </a>
 
-`).join("")
-
-  : `<div class="empty">
-      Aucune demande.
-     </div>`
+`
+        )
+        .join("")
+    : `<div class="empty">
+        Aucune demande.
+       </div>`
 }
 
 </div>
@@ -1988,7 +2042,10 @@ ${escapeHtml(r.id)}
    TOUTES LES DEMANDES
 ========================================================= */
 
-function requestsPage() {
+async function requestsPage() {
+
+  const requests =
+    await getRequests();
 
   return layout(`
 
@@ -2014,8 +2071,7 @@ Historique complet des demandes informatiques
 
 ${
   requests.length
-
-  ? `
+    ? `
 
 <table class="recent">
 
@@ -2023,29 +2079,12 @@ ${
 
 <tr>
 
-<th>
-RÉFÉRENCE
-</th>
-
-<th>
-DEMANDEUR
-</th>
-
-<th>
-SERVICE
-</th>
-
-<th>
-DEMANDE
-</th>
-
-<th>
-DATE
-</th>
-
-<th>
-STATUT
-</th>
+<th>RÉFÉRENCE</th>
+<th>DEMANDEUR</th>
+<th>SERVICE</th>
+<th>DEMANDE</th>
+<th>DATE</th>
+<th>STATUT</th>
 
 </tr>
 
@@ -2053,14 +2092,18 @@ STATUT
 
 <tbody>
 
-${requests.map(r => `
+${requests
+  .map(
+    r => `
 
 <tr>
 
 <td>
 
 <a
-href="/request?id=${encodeURIComponent(r.id)}"
+href="/request?id=${encodeURIComponent(
+      r.id
+    )}"
 class="id">
 
 ${escapeHtml(r.id)}
@@ -2088,7 +2131,9 @@ ${escapeHtml(r.date)}
 <td>
 
 <span
-class="status ${statusClass(r.status)}">
+class="status ${statusClass(
+      r.status
+    )}">
 
 ${escapeHtml(r.status)}
 
@@ -2098,17 +2143,18 @@ ${escapeHtml(r.status)}
 
 </tr>
 
-`).join("")}
+`
+  )
+  .join("")}
 
 </tbody>
 
 </table>
 
 `
-
-  : `<div class="empty">
-      Aucune demande enregistrée.
-     </div>`
+    : `<div class="empty">
+        Aucune demande enregistrée.
+       </div>`
 }
 
 </div>
@@ -2176,29 +2222,12 @@ required>
 Choisir le service
 </option>
 
-<option>
-Direction
-</option>
-
-<option>
-Ressources Humaines
-</option>
-
-<option>
-Comptabilité
-</option>
-
-<option>
-Commercial
-</option>
-
-<option>
-Administration
-</option>
-
-<option>
-Autre
-</option>
+<option>Direction</option>
+<option>Ressources Humaines</option>
+<option>Comptabilité</option>
+<option>Commercial</option>
+<option>Administration</option>
+<option>Autre</option>
 
 </select>
 
@@ -2252,12 +2281,16 @@ Envoyer la demande
    CONVERSATION
 ========================================================= */
 
-function requestPage(id) {
+async function requestPage(id) {
 
-  const request =
-    requests.find(r => r.id === id);
+  const { data: request, error } =
+    await supabase
+      .from("demandes")
+      .select("*")
+      .eq("id", id)
+      .single();
 
-  if (!request) {
+  if (error || !request) {
 
     return layout(`
 
@@ -2284,8 +2317,16 @@ Retour au canal
 </section>
 
 `, "canal");
-
   }
+
+  const { data: messages } =
+    await supabase
+      .from("messages")
+      .select("*")
+      .eq("demande_id", id)
+      .order("date_creation", {
+        ascending: true
+      });
 
   return layout(`
 
@@ -2322,9 +2363,11 @@ ${escapeHtml(request.service)}
 </div>
 
 <span
-class="status ${statusClass(request.status)}">
+class="status ${statusClass(
+    request.statut
+  )}">
 
-${escapeHtml(request.status)}
+${escapeHtml(request.statut)}
 
 </span>
 
@@ -2333,17 +2376,18 @@ ${escapeHtml(request.status)}
 <div class="messages">
 
 ${
-  request.messages &&
-  request.messages.length
-
-  ? request.messages.map(m => `
+  messages && messages.length
+    ? messages
+        .map(
+          m => `
 
 <div
 class="message ${
-  m.auteur === "Service Informatique"
-    ? "me"
-    : ""
-}">
+            m.auteur ===
+            "Service Informatique"
+              ? "me"
+              : ""
+          }">
 
 <div class="message-author">
 
@@ -2353,23 +2397,26 @@ ${escapeHtml(m.auteur)}
 
 <div class="message-text">
 
-${escapeHtml(m.texte)}
+${escapeHtml(m.message)}
 
 </div>
 
 <div class="message-date">
 
-${escapeHtml(m.date)}
+${escapeHtml(
+  formatDateTime(m.date_creation)
+)}
 
 </div>
 
 </div>
 
-`).join("")
-
-  : `<div class="empty">
-      Aucun message.
-     </div>`
+`
+        )
+        .join("")
+    : `<div class="empty">
+        Aucun message.
+       </div>`
 }
 
 </div>
@@ -2380,26 +2427,14 @@ ${escapeHtml(m.date)}
 Changer le statut :
 </span>
 
-<form method="POST" action="/status">
-
-<input
-type="hidden"
-name="id"
-value="${escapeHtml(request.id)}">
-
-<input
-type="hidden"
-name="status"
-value="Nouveau">
-
-<button
-class="status-btn">
-
-🆕 Nouveau
-
-</button>
-
-</form>
+${[
+  ["Nouveau", "🆕 Nouveau"],
+  ["En cours", "🔵 En cours"],
+  ["Terminé", "🟢 Terminé"],
+  ["Non traité", "🔴 Non traité"]
+]
+.map(
+  ([status, label]) => `
 
 <form method="POST" action="/status">
 
@@ -2411,58 +2446,20 @@ value="${escapeHtml(request.id)}">
 <input
 type="hidden"
 name="status"
-value="En cours">
+value="${status}">
 
 <button
 class="status-btn">
 
-🔵 En cours
+${label}
 
 </button>
 
 </form>
 
-<form method="POST" action="/status">
-
-<input
-type="hidden"
-name="id"
-value="${escapeHtml(request.id)}">
-
-<input
-type="hidden"
-name="status"
-value="Terminé">
-
-<button
-class="status-btn">
-
-🟢 Terminé
-
-</button>
-
-</form>
-
-<form method="POST" action="/status">
-
-<input
-type="hidden"
-name="id"
-value="${escapeHtml(request.id)}">
-
-<input
-type="hidden"
-name="status"
-value="Non traité">
-
-<button
-class="status-btn">
-
-🔴 Non traité
-
-</button>
-
-</form>
+`
+)
+.join("")}
 
 </div>
 
@@ -2503,7 +2500,10 @@ Envoyer
    NOTIFICATIONS
 ========================================================= */
 
-function notificationsPage() {
+async function notificationsPage() {
+
+  const requests =
+    await getRequests();
 
   const pending =
     requests.filter(
@@ -2536,11 +2536,14 @@ Demandes nécessitant une attention
 
 ${
   pending.length
-
-  ? pending.map(r => `
+    ? pending
+        .map(
+          r => `
 
 <a
-href="/request?id=${encodeURIComponent(r.id)}"
+href="/request?id=${encodeURIComponent(
+            r.id
+          )}"
 style="
 display:flex;
 justify-content:space-between;
@@ -2571,7 +2574,9 @@ ${escapeHtml(r.sujet)}
 </div>
 
 <span
-class="status ${statusClass(r.status)}">
+class="status ${statusClass(
+            r.status
+          )}">
 
 ${escapeHtml(r.status)}
 
@@ -2579,11 +2584,12 @@ ${escapeHtml(r.status)}
 
 </a>
 
-`).join("")
-
-  : `<div class="empty">
-      Aucune notification.
-     </div>`
+`
+        )
+        .join("")
+    : `<div class="empty">
+        Aucune notification.
+       </div>`
 }
 
 </div>
@@ -2597,7 +2603,34 @@ ${escapeHtml(r.status)}
    UTILISATEURS
 ========================================================= */
 
-function usersPage() {
+async function usersPage() {
+
+  const { data: users, error } =
+    await supabase
+      .from("utilisateurs")
+      .select("*")
+      .order("id", {
+        ascending: true
+      });
+
+  if (error) {
+    console.error(
+      "Erreur utilisateurs :",
+      error
+    );
+
+    return layout(`
+
+<section class="content">
+
+<div class="empty">
+Impossible de charger les utilisateurs.
+</div>
+
+</section>
+
+`, "users");
+  }
 
   return layout(`
 
@@ -2627,21 +2660,10 @@ Gestion des accès à DDI HELPDESK
 
 <tr>
 
-<th>
-UTILISATEUR
-</th>
-
-<th>
-IDENTIFIANT
-</th>
-
-<th>
-SERVICE
-</th>
-
-<th>
-RÔLE
-</th>
+<th>UTILISATEUR</th>
+<th>IDENTIFIANT</th>
+<th>SERVICE</th>
+<th>RÔLE</th>
 
 </tr>
 
@@ -2649,7 +2671,10 @@ RÔLE
 
 <tbody>
 
-${users.map(u => `
+${
+  (users || [])
+    .map(
+      u => `
 
 <tr>
 
@@ -2662,7 +2687,7 @@ ${escapeHtml(u.username)}
 </td>
 
 <td>
-${escapeHtml(u.service)}
+${escapeHtml(u.service || "")}
 </td>
 
 <td>
@@ -2671,7 +2696,10 @@ ${escapeHtml(u.role)}
 
 </tr>
 
-`).join("")}
+`
+    )
+    .join("")
+}
 
 </tbody>
 
@@ -2695,42 +2723,73 @@ app.get("/login", (req, res) => {
   }
 
   res.send(loginPage());
-
 });
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
 
-  const username =
-    String(req.body.username || "").trim();
+  try {
 
-  const password =
-    String(req.body.password || "");
+    const username =
+      String(
+        req.body.username || ""
+      ).trim();
 
-  const user =
-    users.find(
-      u =>
-        u.username === username &&
-        u.password === password
-    );
+    const password =
+      String(
+        req.body.password || ""
+      );
 
-  if (!user) {
-    return res.send(
+    const { data: user, error } =
+      await supabase
+        .from("utilisateurs")
+        .select("*")
+        .eq("username", username)
+        .eq("mot_de_passe", password)
+        .maybeSingle();
+
+    if (error) {
+
+      console.error(
+        "Erreur connexion :",
+        error
+      );
+
+      return res.send(
+        loginPage(
+          "Erreur de connexion à la base de données."
+        )
+      );
+    }
+
+    if (!user) {
+
+      return res.send(
+        loginPage(
+          "Nom d'utilisateur ou mot de passe incorrect."
+        )
+      );
+    }
+
+    req.session.user = {
+      id: user.id,
+      nom: user.nom,
+      username: user.username,
+      role: user.role,
+      service: user.service
+    };
+
+    res.redirect("/");
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.send(
       loginPage(
-        "Nom d'utilisateur ou mot de passe incorrect."
+        "Une erreur est survenue."
       )
     );
   }
-
-  req.session.user = {
-    id: user.id,
-    nom: user.nom,
-    username: user.username,
-    role: user.role,
-    service: user.service
-  };
-
-  res.redirect("/");
-
 });
 
 /* =========================================================
@@ -2746,97 +2805,235 @@ app.get("/logout", (req, res) => {
 });
 
 /* =========================================================
-   ROUTES PROTÉGÉES
+   ROUTES
 ========================================================= */
 
-app.get("/", requireLogin, (req, res) => {
-  res.send(dashboardPage());
+app.get("/", requireLogin, async (req, res) => {
+
+  try {
+    res.send(
+      await dashboardPage()
+    );
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "Erreur lors du chargement du tableau de bord."
+    );
+  }
+
 });
 
-app.get("/canal", requireLogin, (req, res) => {
-  res.send(canalPage());
+app.get("/canal", requireLogin, async (req, res) => {
+
+  try {
+    res.send(
+      await canalPage()
+    );
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "Erreur lors du chargement du Canal DDI."
+    );
+  }
+
 });
 
-app.get("/requests", requireLogin, (req, res) => {
-  res.send(requestsPage());
+app.get("/requests", requireLogin, async (req, res) => {
+
+  try {
+    res.send(
+      await requestsPage()
+    );
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "Erreur lors du chargement des demandes."
+    );
+  }
+
 });
 
 app.get("/new", requireLogin, (req, res) => {
   res.send(newPage());
 });
 
-app.get("/request", requireLogin, (req, res) => {
-  res.send(requestPage(req.query.id));
+app.get("/request", requireLogin, async (req, res) => {
+
+  try {
+    res.send(
+      await requestPage(req.query.id)
+    );
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "Erreur lors du chargement de la demande."
+    );
+  }
+
 });
 
-app.get("/notifications", requireLogin, (req, res) => {
-  res.send(notificationsPage());
-});
+app.get(
+  "/notifications",
+  requireLogin,
+  async (req, res) => {
 
-app.get("/users", requireLogin, (req, res) => {
-  res.send(usersPage());
+    try {
+      res.send(
+        await notificationsPage()
+      );
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send(
+        "Erreur lors du chargement des notifications."
+      );
+    }
+
+  }
+);
+
+app.get("/users", requireLogin, async (req, res) => {
+
+  try {
+    res.send(
+      await usersPage()
+    );
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "Erreur lors du chargement des utilisateurs."
+    );
+  }
+
 });
 
 /* =========================================================
    CRÉER UNE DEMANDE
 ========================================================= */
 
-app.post("/new", requireLogin, (req, res) => {
+app.post("/new", requireLogin, async (req, res) => {
 
-  const {
-    nom,
-    service,
-    sujet,
-    description
-  } = req.body;
+  try {
 
-  const request = {
+    const nom =
+      String(req.body.nom || "").trim();
 
-    id:
-      `DDI-${String(nextId).padStart(4, "0")}`,
+    const service =
+      String(req.body.service || "").trim();
 
-    nom:
-      nom || "Inconnu",
+    const sujet =
+      String(req.body.sujet || "").trim();
 
-    service:
-      service || "Non précisé",
+    const description =
+      String(
+        req.body.description || ""
+      ).trim();
 
-    sujet:
-      sujet || "Sans objet",
+    if (!nom || !service || !sujet || !description) {
+      return res.status(400).send(
+        "Tous les champs sont obligatoires."
+      );
+    }
 
-    description:
-      description || "",
+    /* Trouver le prochain numéro */
 
-    status:
-      "Nouveau",
+    const { data: existing, error: findError } =
+      await supabase
+        .from("demandes")
+        .select("id");
 
-    date:
-      new Date().toLocaleDateString("fr-FR"),
+    if (findError) {
+      throw findError;
+    }
 
-    messages: [
+    let maxNumber = 0;
 
-      {
-        auteur:
-          nom || "Inconnu",
+    (existing || []).forEach(item => {
 
-        texte:
-          description || sujet || "",
+      const match =
+        String(item.id).match(
+          /DDI-(\d+)/
+        );
 
-        date:
-          new Date().toLocaleString("fr-FR")
+      if (match) {
+
+        const number =
+          parseInt(match[1], 10);
+
+        if (number > maxNumber) {
+          maxNumber = number;
+        }
+
       }
 
-    ]
+    });
 
-  };
+    const newId =
+      `DDI-${String(
+        maxNumber + 1
+      ).padStart(4, "0")}`;
 
-  requests.unshift(request);
+    /* Créer la demande */
 
-  nextId++;
+    const { error: insertError } =
+      await supabase
+        .from("demandes")
+        .insert({
+          id: newId,
+          nom,
+          service,
+          sujet,
+          description,
+          statut: "Nouveau"
+        });
 
-  res.redirect(
-    `/request?id=${encodeURIComponent(request.id)}`
-  );
+    if (insertError) {
+      throw insertError;
+    }
+
+    /* Premier message */
+
+    const { error: messageError } =
+      await supabase
+        .from("messages")
+        .insert({
+          demande_id: newId,
+          auteur: nom,
+          message: description
+        });
+
+    if (messageError) {
+      throw messageError;
+    }
+
+    res.redirect(
+      `/request?id=${encodeURIComponent(
+        newId
+      )}`
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Erreur création demande :",
+      error
+    );
+
+    res.status(500).send(
+      "Impossible d'enregistrer la demande."
+    );
+  }
 
 });
 
@@ -2844,38 +3041,72 @@ app.post("/new", requireLogin, (req, res) => {
    CHANGER LE STATUT
 ========================================================= */
 
-app.post("/status", requireLogin, (req, res) => {
+app.post("/status", requireLogin, async (req, res) => {
 
-  const {
-    id,
-    status
-  } = req.body;
+  const id =
+    String(req.body.id || "");
 
-  const request =
-    requests.find(r => r.id === id);
+  const status =
+    String(req.body.status || "");
 
-  if (request) {
+  const allowedStatuses = [
+    "Nouveau",
+    "En cours",
+    "Terminé",
+    "Non traité"
+  ];
 
-    request.status = status;
-
-    request.messages.push({
-
-      auteur:
-        "Service Informatique",
-
-      texte:
-        `Statut de la demande changé en : ${status}`,
-
-      date:
-        new Date().toLocaleString("fr-FR")
-
-    });
-
+  if (!allowedStatuses.includes(status)) {
+    return res.status(400).send(
+      "Statut invalide."
+    );
   }
 
-  res.redirect(
-    `/request?id=${encodeURIComponent(id)}`
-  );
+  try {
+
+    const { error: updateError } =
+      await supabase
+        .from("demandes")
+        .update({
+          statut: status,
+          date_modification:
+            new Date().toISOString()
+        })
+        .eq("id", id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    const { error: messageError } =
+      await supabase
+        .from("messages")
+        .insert({
+          demande_id: id,
+          auteur: "Service Informatique",
+          message:
+            `Statut de la demande changé en : ${status}`
+        });
+
+    if (messageError) {
+      throw messageError;
+    }
+
+    res.redirect(
+      `/request?id=${encodeURIComponent(id)}`
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Erreur changement statut :",
+      error
+    );
+
+    res.status(500).send(
+      "Impossible de modifier le statut."
+    );
+  }
 
 });
 
@@ -2883,36 +3114,54 @@ app.post("/status", requireLogin, (req, res) => {
    MESSAGE
 ========================================================= */
 
-app.post("/message", requireLogin, (req, res) => {
+app.post("/message", requireLogin, async (req, res) => {
 
-  const {
-    id,
-    message
-  } = req.body;
+  const id =
+    String(req.body.id || "");
 
-  const request =
-    requests.find(r => r.id === id);
+  const message =
+    String(
+      req.body.message || ""
+    ).trim();
 
-  if (request && message) {
+  if (!id || !message) {
 
-    request.messages.push({
-
-      auteur:
-        "Service Informatique",
-
-      texte:
-        message,
-
-      date:
-        new Date().toLocaleString("fr-FR")
-
-    });
+    return res.redirect(
+      `/request?id=${encodeURIComponent(id)}`
+    );
 
   }
 
-  res.redirect(
-    `/request?id=${encodeURIComponent(id)}`
-  );
+  try {
+
+    const { error } =
+      await supabase
+        .from("messages")
+        .insert({
+          demande_id: id,
+          auteur: "Service Informatique",
+          message
+        });
+
+    if (error) {
+      throw error;
+    }
+
+    res.redirect(
+      `/request?id=${encodeURIComponent(id)}`
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Erreur message :",
+      error
+    );
+
+    res.status(500).send(
+      "Impossible d'envoyer le message."
+    );
+  }
 
 });
 
@@ -2927,8 +3176,10 @@ app.listen(
   PORT,
   "0.0.0.0",
   () => {
+
     console.log(
       `DDI HELPDESK lancé sur le port ${PORT}`
     );
+
   }
 );
